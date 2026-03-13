@@ -29,7 +29,7 @@ async def _ping(_, m: types.Message):
     cpu_percent = psutil.cpu_percent(interval=0.5)
     
     # Get active chats count
-    from HasiiMusic import db
+    from Elevenyts import db
     active_chats = len(await db.get_chats())
     
     caption_text = m.lang["ping_pong"].format(
