@@ -30,12 +30,22 @@
 - 🔄 **Auto-Leave** - Automatically leaves inactive voice chats
 
 ---
+## 🌐 Deploy to Cloud Platforms
 
-## Deploy
+<p align="center">
+  <a href="https://render.com">
+    <img src="https://img.shields.io/badge/🚀%20Render-46E3B7?style=for-the-badge&logo=render&logoColor=white&labelColor=1A1A1A&color=46E3B7" alt="Render">
+  </a>
+  &nbsp;&nbsp;&nbsp;
+  <a href="https://railway.app">
+    <img src="https://img.shields.io/badge/🚂%20Railway-0B0D0E?style=for-the-badge&logo=railway&logoColor=white&labelColor=0B0D0E&color=FFB800" alt="Railway">
+  </a>
+  &nbsp;&nbsp;&nbsp;
+  <a href="https://heroku.com">
+    <img src="https://img.shields.io/badge/⚡%20Heroku-430098?style=for-the-badge&logo=heroku&logoColor=white&labelColor=430098&color=6A0DAD" alt="Heroku">
+  </a>
+</p>
 
-[![Render](https://img.shields.io/badge/Render-46E3B7?style=for-the-badge&logo=render&logoColor=white)](https://render.com)
-[![Railway](https://img.shields.io/badge/Railway-0B0D0E?style=for-the-badge&logo=railway&logoColor=white)](https://railway.app)
-[![Heroku](https://img.shields.io/badge/Heroku-430098?style=for-the-badge&logo=heroku&logoColor=white)](https://heroku.com)
 
 ### ✔️ Prerequisites
 
