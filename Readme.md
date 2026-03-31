@@ -142,6 +142,6 @@ bash start
   
   ### Made with ❤️ by Artist 
   
-  **© 2025 ˹ᴇʟᴇᴠᴇɴʏᴛꜱ ᴍᴜꜱɪᴄ˼. All rights reserved.**
+  **© 2026 ˹ᴇʟᴇᴠᴇɴʏᴛꜱ ᴍᴜꜱɪᴄ˼. All rights reserved.**
   
 </div>
