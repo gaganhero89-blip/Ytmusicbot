@@ -95,7 +95,6 @@ class Thumbnail:
             draw = ImageDraw.Draw(bg)
 
             # =========================
-            # 🔐 ENCODED WATERMARK TEXT
             # =========================
             left_encoded = "QVJUSVNU"          
             right_encoded = "RUxFVkVOWVRT"    
