@@ -16,52 +16,64 @@ from Elevenyts.helpers import Track
 W, H = 1280, 720
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-#  ALBUM ART — CIRCLE, CENTERED TOP
+#  ALBUM ART — LEFT SIDE
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-ART_W, ART_H = 340, 340
-ART_X        = (W - ART_W) // 2
-ART_Y        = 40
+ART_W, ART_H = 440, 440
+ART_X        = 55
+ART_Y        = (H - ART_H) // 2
+ART_R        = 32
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-#  BOTTOM DARK CARD
+#  INFO PANEL — RIGHT SIDE
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-CARD_Y = ART_Y + ART_H - 60
-CARD_R = 36
+PANEL_X  = 530
+PANEL_Y  = 60
+PANEL_X2 = W - 30
+PANEL_Y2 = H - 50
+
+IX = 570    # text left edge
+IY = 100    # text top
+
+BADGE_X, BADGE_Y = IX, IY
+TITLE_Y          = IY + 60
+ARTIST_Y         = TITLE_Y + 72
+VIEWS_Y          = ARTIST_Y + 62
+
+BAR_X  = IX
+BAR_Y  = VIEWS_Y + 62
+BAR_W  = 580
+BAR_H  = 5
+TIME_Y = BAR_Y + 14
+
+CTRL_Y = BAR_Y + 56
+
+WF_X   = BAR_X + BAR_W + 22   # waveform start x
+WF_Y   = BAR_Y - 30           # waveform center y
+
+MARK_X = 60
+MARK_Y = H - 50
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-#  TEXT LAYOUT (all centered)
+#  COLORS
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-TITLE_Y   = CARD_Y + 72
-ARTIST_Y  = TITLE_Y + 62
-VIEWS_Y   = ARTIST_Y + 42
-
-DIVIDER_Y = VIEWS_Y + 42
-
-BAR_X     = 100
-BAR_Y     = DIVIDER_Y + 22
-BAR_W     = W - 200
-BAR_H     = 4
-TIME_Y    = BAR_Y + 14
-
-CTRL_Y    = BAR_Y + 52
-MARK_Y    = H - 52
-
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-#  COLORS — warm gold & dark theme
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-C_TITLE    = (250, 245, 235, 255)
-C_ARTIST   = (180, 165, 140, 255)
-C_SUBTEXT  = (130, 120, 105, 255)
-C_GOLD     = (255, 200, 80,  255)
-C_GOLD2    = (220, 100, 40,  255)
-C_BAR_TRK  = (60,  55,  45,  180)
-C_CARD     = (12,  10,  20,  210)
-C_CARD_BR  = (255, 160, 60,  25)
-C_CTRL     = (150, 140, 118, 255)
-C_MARK     = (255, 170, 50,  160)
-C_GLOW1    = (255, 160, 80)
-C_GLOW2    = (255, 120, 60)
-C_GLOW3    = (255, 180, 100)
+C_TITLE    = (240, 240, 255, 255)
+C_ARTIST   = (180, 175, 210, 255)
+C_SUBTEXT  = (155, 150, 190, 200)
+C_TIME     = (120, 115, 155, 220)
+C_CTRL     = (130, 125, 165, 220)
+C_BADGE_BG = (255, 60,  90,  220)
+C_BADGE_TX = (255, 255, 255, 255)
+C_BADGE_DT = (255, 200, 200, 255)
+C_BAR_TRK  = (60,  55,  80,  180)
+C_GRAD_A   = (255, 60,  100, 255)   # pink
+C_GRAD_B   = (180, 80,  255, 255)   # violet
+C_GLOW     = (200, 120, 255)
+C_KNOB     = (255, 255, 255, 255)
+C_MARK     = (160, 140, 210, 160)
+C_PANEL    = (255, 255, 255, 8)
+C_PANEL_BR = (255, 255, 255, 12)
+C_VIEW_BR  = (255, 255, 255, 40)
+C_VIEW_DOT = (120, 115, 160, 180)
 
 
 class Thumbnail:
@@ -69,21 +81,18 @@ class Thumbnail:
     def __init__(self):
         base = "Elevenyts/helpers"
         try:
-            # Raleway-Bold — impactful centered title
-            self.f_title  = ImageFont.truetype(f"{base}/Raleway-Bold.ttf", 52)
-            self.f_artist = ImageFont.truetype(f"{base}/Raleway-Bold.ttf", 32)
-            # Inter-Light — all subtitles, times, controls
-            self.f_sub    = ImageFont.truetype(f"{base}/Inter-Light.ttf",  26)
-            self.f_small  = ImageFont.truetype(f"{base}/Inter-Light.ttf",  21)
+            self.f_title  = ImageFont.truetype(f"{base}/Raleway-Bold.ttf", 60)
+            self.f_artist = ImageFont.truetype(f"{base}/Raleway-Bold.ttf", 38)
+            self.f_small  = ImageFont.truetype(f"{base}/Inter-Light.ttf",  22)
             self.f_badge  = ImageFont.truetype(f"{base}/Inter-Light.ttf",  18)
-            self.f_ctrl   = ImageFont.truetype(f"{base}/Inter-Light.ttf",  28)
+            self.f_mark   = ImageFont.truetype(f"{base}/Inter-Light.ttf",  20)
         except Exception as e:
             print(f"[Thumbnail] Font error: {e} — using default")
             _f = ImageFont.load_default()
-            self.f_title = self.f_artist = self.f_sub = \
-                self.f_small = self.f_badge = self.f_ctrl = _f
+            self.f_title = self.f_artist = self.f_small = \
+                self.f_badge = self.f_mark = _f
 
-    # ── Download ─────────────────────────────────────────
+    # ── Download YouTube thumbnail ───────────────────────
     async def _fetch(self, path: str, url: str) -> str:
         async with aiohttp.ClientSession() as session:
             async with session.get(url) as resp:
@@ -92,7 +101,7 @@ class Thumbnail:
                     f.write(await resp.read())
         return path
 
-    # ── Entry ────────────────────────────────────────────
+    # ── Public entry ─────────────────────────────────────
     async def generate(self, song: Track) -> str:
         try:
             os.makedirs("cache", exist_ok=True)
@@ -112,180 +121,197 @@ class Thumbnail:
             print(f"[Thumbnail] generate() error: {e}")
             return config.DEFAULT_THUMB
 
-    # ── Draw ─────────────────────────────────────────────
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    #  DRAW
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     def _draw(self, temp: str, output: str, song: Track) -> str:
         try:
             raw = Image.open(temp).convert("RGBA")
 
-            # 1. Blurred song thumbnail as BG (very dark)
+            # ── 1. Dark purple/navy background ───────────
             bg = raw.resize((W, H), Image.LANCZOS)
-            bg = bg.filter(ImageFilter.GaussianBlur(50))
+            bg = bg.filter(ImageFilter.GaussianBlur(55))
             bg = ImageEnhance.Brightness(bg).enhance(0.18)
 
-            # 2. Diagonal light streak (top-left to bottom-right)
-            streak = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-            sd     = ImageDraw.Draw(streak, "RGBA")
-            for i in range(80):
-                alpha = max(0, 16 - i // 4)
-                sd.line([(i * 3, 0), (W, H - i * 3)],
-                        fill=(255, 220, 180, alpha), width=1)
-            bg = Image.alpha_composite(bg, streak)
+            # Deep navy tint overlay
+            tint = Image.new("RGBA", (W, H), (12, 6, 28, 200))
+            bg   = Image.alpha_composite(bg, tint)
 
-            # 3. Orange glow rings behind circular art
-            cx = ART_X + ART_W // 2
-            cy = ART_Y + ART_H // 2
-            for (rr, aa, col) in [
-                (210, 8,  C_GLOW1),
-                (175, 16, C_GLOW2),
-                (140, 28, C_GLOW3),
-            ]:
-                gl = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-                ImageDraw.Draw(gl, "RGBA").ellipse(
-                    (cx - rr, cy - rr, cx + rr, cy + rr),
-                    fill=(*col, aa)
-                )
-                bg = Image.alpha_composite(bg, gl)
+            # ── 2. Subtle color bleed from art ────────────
+            bleed = raw.resize((W, H), Image.LANCZOS)
+            bleed = bleed.filter(ImageFilter.GaussianBlur(80))
+            bleed = ImageEnhance.Brightness(bleed).enhance(0.10)
+            bleed_layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+            bleed_layer.paste(bleed, (0, 0))
+            bg = Image.alpha_composite(bg, bleed_layer)
 
-            # 4. Circular album art
+            # ── 3. Glass panel (right) ────────────────────
+            glass = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+            ImageDraw.Draw(glass, "RGBA").rounded_rectangle(
+                (PANEL_X, PANEL_Y, PANEL_X2, PANEL_Y2),
+                radius=28, fill=C_PANEL, outline=C_PANEL_BR, width=1
+            )
+            bg = Image.alpha_composite(bg, glass)
+
+            # ── 4. Album art — rounded rectangle ─────────
             art      = raw.resize((ART_W, ART_H), Image.LANCZOS)
             art_mask = Image.new("L", (ART_W, ART_H), 0)
-            ImageDraw.Draw(art_mask).ellipse(
-                (0, 0, ART_W, ART_H), fill=255
+            ImageDraw.Draw(art_mask).rounded_rectangle(
+                (0, 0, ART_W, ART_H), radius=ART_R, fill=255
             )
             bg.paste(art, (ART_X, ART_Y), art_mask)
 
+            # Art border
+            ab = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+            ImageDraw.Draw(ab).rounded_rectangle(
+                (ART_X, ART_Y, ART_X + ART_W, ART_Y + ART_H),
+                radius=ART_R, outline=(255, 255, 255, 18), width=2
+            )
+            bg   = Image.alpha_composite(bg, ab)
             draw = ImageDraw.Draw(bg, "RGBA")
 
-            # 5. Circle border (gold)
+            # ── 5. NOW PLAYING badge (PIL drawn) ──────────
+            BDW, BDH = 210, 36
+            draw.rounded_rectangle(
+                (BADGE_X, BADGE_Y, BADGE_X + BDW, BADGE_Y + BDH),
+                radius=18, fill=C_BADGE_BG
+            )
+            # Red dot
             draw.ellipse(
-                (ART_X - 3, ART_Y - 3, ART_X + ART_W + 3, ART_Y + ART_H + 3),
-                outline=(255, 180, 80, 55), width=3
+                (BADGE_X + 14, BADGE_Y + 11,
+                 BADGE_X + 26, BADGE_Y + 25),
+                fill=C_BADGE_DT
             )
-
-            # 6. Bottom frosted dark card
-            card = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-            ImageDraw.Draw(card, "RGBA").rounded_rectangle(
-                (40, CARD_Y, W - 40, H - 30),
-                radius=CARD_R,
-                fill=C_CARD,
-                outline=C_CARD_BR,
-                width=1
-            )
-            bg   = Image.alpha_composite(bg, card)
-            draw = ImageDraw.Draw(bg, "RGBA")
-
-            # 7. Song title — CENTERED (Raleway Bold)
-            title = song.title.strip()
-            if len(title) > 30:
-                title = title[:30] + "…"
-            tw = int(draw.textlength(title, font=self.f_title))
+            # "NOW PLAYING" text
             draw.text(
-                ((W - tw) // 2, TITLE_Y),
-                title, fill=C_TITLE, font=self.f_title
+                (BADGE_X + 34, BADGE_Y + 9),
+                "NOW PLAYING",
+                fill=C_BADGE_TX, font=self.f_badge
             )
 
-            # 8. Artist — centered (Raleway Bold, smaller)
+            # ── 6. Song title ─────────────────────────────
+            title = song.title.strip()
+            if len(title) > 24:
+                title = title[:24] + "…"
+            draw.text((IX, TITLE_Y), title,
+                      fill=C_TITLE, font=self.f_title)
+
+            # ── 7. Artist / channel ───────────────────────
             channel = (
                 getattr(song, "channel",  None)
                 or getattr(song, "artist",   None)
                 or getattr(song, "uploader", None)
-                or "Unknown Artist"
+                or getattr(song, "author",   None)
+                or ""
             )
             channel = str(channel).strip()
-            if not channel or channel.lower() in ("none", ""):
-                channel = "Unknown Artist"
-            if len(channel) > 40:
-                channel = channel[:40] + "…"
+            if not channel or channel.lower() in ("none", "unknown artist", "unknown", ""):
+                raw_title = song.title.strip()
+                found = ""
+                for sep in ["|", "—", "-"]:
+                    if sep in raw_title:
+                        parts     = raw_title.split(sep, 1)
+                        candidate = parts[1].strip()
+                        if len(candidate) > 2:
+                            found = candidate
+                            break
+                channel = found if found else "Adam Music Bot"
+            if len(channel) > 36:
+                channel = channel[:36] + "…"
 
-            aw = int(draw.textlength(channel, font=self.f_artist))
-            draw.text(
-                ((W - aw) // 2, ARTIST_Y),
-                channel, fill=C_ARTIST, font=self.f_artist
-            )
+            draw.text((IX, ARTIST_Y), channel,
+                      fill=C_ARTIST, font=self.f_artist)
 
-            # 9. Views — centered (Inter Light)
+            # ── 8. Views pill (PIL drawn, no unicode) ─────
             views = str(getattr(song, "views", "") or "").strip()
-            if views and views.lower() not in ("none", "0", ""):
-                vtxt = f"{views} views  •  YouTube"
-            else:
-                vtxt = "YouTube"
-            vw = int(draw.textlength(vtxt, font=self.f_small))
-            draw.text(
-                ((W - vw) // 2, VIEWS_Y),
-                vtxt, fill=C_SUBTEXT, font=self.f_small
-            )
+            views_str = f"{views} views" if views and views.lower() not in ("none", "0", "") else ""
 
-            # 10. Divider — glowing fade line
-            for i in range(BAR_W):
-                t     = i / (BAR_W - 1)
-                alpha = int(255 * (1 - abs(t - 0.5) * 2))
-                draw.point(
-                    (BAR_X + i, DIVIDER_Y),
-                    fill=(255, 160, 60, max(5, alpha * 55 // 255))
+            VX, VY = IX, VIEWS_Y
+            # Eye icon (circle + pupil)
+            draw.ellipse((VX + 8, VY + 9, VX + 26, VY + 23),
+                         outline=(*C_VIEW_DOT[:3], 180), width=2)
+            draw.ellipse((VX + 14, VY + 13, VX + 20, VY + 19),
+                         fill=(*C_VIEW_DOT[:3], 180))
+
+            tx = VX + 32
+            if views_str:
+                draw.text((tx, VY + 6), views_str,
+                          fill=C_SUBTEXT, font=self.f_small)
+                vw2 = int(draw.textlength(views_str, font=self.f_small))
+                # Dot separator
+                draw.ellipse(
+                    (tx + vw2 + 8, VY + 14, tx + vw2 + 14, VY + 20),
+                    fill=C_VIEW_DOT
                 )
+                draw.text((tx + vw2 + 20, VY + 6), "YouTube",
+                          fill=C_SUBTEXT, font=self.f_small)
+                # Border around pill
+                pill_w = vw2 + 80
+                draw.rounded_rectangle(
+                    (VX, VY + 2, VX + pill_w, VY + 30),
+                    radius=14, outline=C_VIEW_BR, width=1
+                )
+            else:
+                draw.text((tx, VY + 6), "YouTube",
+                          fill=C_SUBTEXT, font=self.f_small)
 
-            # 11. Progress bar track
+            # ── 9. Progress bar track ─────────────────────
             draw.rounded_rectangle(
                 (BAR_X, BAR_Y, BAR_X + BAR_W, BAR_Y + BAR_H),
-                radius=2, fill=C_BAR_TRK
+                radius=3, fill=C_BAR_TRK
             )
 
-            # 12. Gold gradient fill
+            # ── 10. Pink → violet gradient fill ──────────
             bar_progress = int(BAR_W * 0.15)
             for i in range(bar_progress):
                 t  = i / max(bar_progress - 1, 1)
-                rr = int(255 + (220 - 255) * t * 0.3)
-                gg = int(200 + (100 - 200) * t)
-                bb = int(80  + (20  - 80)  * t)
+                rr = int(C_GRAD_A[0] + (C_GRAD_B[0] - C_GRAD_A[0]) * t)
+                gg = int(C_GRAD_A[1] + (C_GRAD_B[1] - C_GRAD_A[1]) * t)
+                bb = int(C_GRAD_A[2] + (C_GRAD_B[2] - C_GRAD_A[2]) * t)
                 draw.rectangle(
                     (BAR_X + i, BAR_Y, BAR_X + i + 1, BAR_Y + BAR_H),
-                    fill=(min(255, rr), min(255, gg), min(255, bb), 255)
+                    fill=(rr, gg, bb, 255)
                 )
 
-            # 13. Gold knob
+            # ── 11. Knob with glow ────────────────────────
             kx = BAR_X + bar_progress
             ky = BAR_Y + BAR_H // 2
-            draw.ellipse(
-                (kx - 8, ky - 8, kx + 8, ky + 8),
-                fill=C_GOLD
-            )
+            kg = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+            kgd = ImageDraw.Draw(kg, "RGBA")
+            for rr, aa in [(20, 12), (14, 22), (9, 40)]:
+                kgd.ellipse(
+                    (kx - rr, ky - rr, kx + rr, ky + rr),
+                    fill=(*C_GLOW, aa)
+                )
+            bg   = Image.alpha_composite(bg, kg)
+            draw = ImageDraw.Draw(bg, "RGBA")
+            draw.ellipse((kx - 10, ky - 10, kx + 10, ky + 10),
+                         fill=C_KNOB)
 
-            # 14. Time labels
+            # ── 12. Time labels ───────────────────────────
             draw.text((BAR_X, TIME_Y), "00:00",
-                      fill=C_SUBTEXT, font=self.f_small)
+                      fill=C_TIME, font=self.f_small)
             dur   = str(getattr(song, "duration", "0:00") or "0:00").strip()
             dur_w = int(draw.textlength(dur, font=self.f_small))
             draw.text((BAR_X + BAR_W - dur_w, TIME_Y), dur,
-                      fill=C_SUBTEXT, font=self.f_small)
+                      fill=C_TIME, font=self.f_small)
 
-            # 15. Controls — centered
-            icons = [("⇄", False), ("⏮", False), ("⏸", True),
-                     ("⏭", False), ("↺", False)]
-            spc   = 100
-            sx    = W // 2 - spc * 2
-            for idx, (ic, is_center) in enumerate(icons):
-                icx = sx + idx * spc
-                if is_center:
-                    draw.ellipse(
-                        (icx - 24, CTRL_Y - 4, icx + 24, CTRL_Y + 40),
-                        fill=(255, 170, 50, 20),
-                        outline=(255, 170, 50, 48),
-                        width=1
-                    )
-                col = C_GOLD if is_center else C_CTRL
-                iw  = int(draw.textlength(ic, font=self.f_ctrl))
-                draw.text(
-                    (icx - iw // 2, CTRL_Y),
-                    ic, fill=col, font=self.f_ctrl
-                )
+            # ── 13. Waveform bars (right of bar) ──────────
+            self._waveform(draw, WF_X, WF_Y + 55)
 
-            # 16. Bot watermark — bottom center
-            mark  = "♪  AdamMusicBot"
-            mark_w = int(draw.textlength(mark, font=self.f_badge))
-            draw.text(
-                ((W - mark_w) // 2, MARK_Y),
-                mark, fill=C_MARK, font=self.f_badge
-            )
+            # ── 14. Controls (all PIL shapes) ─────────────
+            cy2 = CTRL_Y + 18
+            spc = 90
+            sx  = BAR_X + BAR_W // 2 - spc * 2
+            self._draw_shuffle(draw, sx + 0 * spc, cy2, C_CTRL)
+            self._draw_prev   (draw, sx + 1 * spc, cy2, C_CTRL)
+            self._draw_pause  (draw, sx + 2 * spc, cy2)
+            self._draw_next   (draw, sx + 3 * spc, cy2, C_CTRL)
+            self._draw_repeat (draw, sx + 4 * spc, cy2, C_CTRL)
+
+            # ── 15. Watermark ─────────────────────────────
+            draw.text((MARK_X, MARK_Y), "Adam Music Bot",
+                      fill=C_MARK, font=self.f_mark)
 
             # Save
             bg.convert("RGB").save(output, "PNG", optimize=True)
@@ -299,3 +325,59 @@ class Thumbnail:
         except Exception as e:
             print(f"[Thumbnail] _draw() error: {e}")
             return config.DEFAULT_THUMB
+
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    #  WAVEFORM
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    def _waveform(self, draw: ImageDraw.ImageDraw, x: int, cy: int) -> None:
+        heights = [18, 32, 24, 45, 30, 52, 36, 44, 22, 40, 28, 50, 20, 38, 26, 48]
+        for i, bh in enumerate(heights):
+            bx    = x + i * 14
+            alpha = int(80 + 100 * (i / len(heights)))
+            draw.rounded_rectangle(
+                (bx, cy - bh // 2, bx + 6, cy + bh // 2),
+                radius=3,
+                fill=(150, 100, 255, alpha)
+            )
+
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    #  CONTROL SHAPES (no unicode/emoji)
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    def _draw_shuffle(self, draw, x, y, col):
+        """Two crossing arrows — shuffle icon"""
+        draw.line([(x - 14, y - 6), (x + 14, y - 6)], fill=col, width=2)
+        draw.polygon([(x + 10, y - 11), (x + 17, y - 6), (x + 10, y - 1)], fill=col)
+        draw.line([(x + 14, y + 6), (x - 14, y + 6)], fill=col, width=2)
+        draw.polygon([(x - 10, y + 11), (x - 17, y + 6), (x - 10, y + 1)], fill=col)
+
+    def _draw_prev(self, draw, x, y, col):
+        """Bar + left triangle — previous icon"""
+        draw.rectangle((x - 15, y - 13, x - 9, y + 13), fill=col)
+        draw.polygon([(x + 13, y - 13), (x - 8, y), (x + 13, y + 13)], fill=col)
+
+    def _draw_pause(self, draw, x, y):
+        """Circle + two bars — pause icon (gold circle)"""
+        draw.ellipse(
+            (x - 24, y - 24, x + 24, y + 24),
+            fill=(255, 255, 255, 255)
+        )
+        draw.rectangle((x - 9, y - 10, x - 3, y + 10), fill=(16, 12, 32, 255))
+        draw.rectangle((x + 3, y - 10, x + 9, y + 10), fill=(16, 12, 32, 255))
+
+    def _draw_next(self, draw, x, y, col):
+        """Right triangle + bar — next icon"""
+        draw.polygon([(x - 13, y - 13), (x + 8, y), (x - 13, y + 13)], fill=col)
+        draw.rectangle((x + 9, y - 13, x + 15, y + 13), fill=col)
+
+    def _draw_repeat(self, draw, x, y, col):
+        """Circular arc + arrow — repeat icon"""
+        for angle in range(20, 340, 5):
+            a   = math.radians(angle)
+            px2 = int(x + 13 * math.cos(a))
+            py2 = int(y + 13 * math.sin(a))
+            draw.ellipse((px2 - 1, py2 - 1, px2 + 2, py2 + 2), fill=col)
+        draw.polygon(
+            [(x + 11, y - 5), (x + 18, y), (x + 11, y + 5)],
+            fill=col
+            )
+                          
