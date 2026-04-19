@@ -16,49 +16,13 @@ from Elevenyts.helpers import Track, utils
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-#  yt-dlp OPTIONS
+#  COOKIE FILE
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-def _audio_opts(video_id: str) -> dict:
-    """Best audio quality — 320kbps MP3."""
-    return {
-        "format": "bestaudio/best",
-        "outtmpl": f"downloads/{video_id}.%(ext)s",
-        "postprocessors": [{
-            "key": "FFmpegExtractAudio",
-            "preferredcodec": "mp3",
-            "preferredquality": "320",
-        }],
-        "quiet": True,
-        "no_warnings": True,
-        "noplaylist": True,
-        "cookiefile": _get_cookie_file(),
-    }
-
-
-def _video_opts(video_id: str, quality: str = "1080") -> dict:
-    """Best video quality — up to 1080p MP4, audio+video merged."""
-    return {
-        # Best video up to quality + best audio, merged into mp4
-        "format": (
-            f"bestvideo[height<={quality}][ext=mp4]+bestaudio[ext=m4a]"
-            f"/bestvideo[height<={quality}]+bestaudio"
-            f"/bestvideo[height<={quality}]/best[height<={quality}]/best"
-        ),
-        "outtmpl": f"downloads/{video_id}.%(ext)s",
-        "merge_output_format": "mp4",
-        "postprocessor_args": ["-c:v", "copy", "-c:a", "aac"],
-        "quiet": True,
-        "no_warnings": True,
-        "noplaylist": True,
-        "cookiefile": _get_cookie_file(),
-    }
-
-
 def _get_cookie_file() -> Optional[str]:
-    """Return cookie file path if exists."""
     paths = [
         "Elevenyts/cookies/cookies.txt",
+        "anony/cookies/cookies.txt",
         "cookies/cookies.txt",
         "cookies.txt",
     ]
@@ -66,6 +30,109 @@ def _get_cookie_file() -> Optional[str]:
         if os.path.exists(p):
             return p
     return None
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  yt-dlp BASE OPTIONS — anti-bot headers
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+_BASE_OPTS = {
+    "quiet": True,
+    "no_warnings": True,
+    "noplaylist": True,
+    # Pretend to be a real browser — bypasses most bot detection
+    "http_headers": {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/120.0.0.0 Safari/537.36"
+        ),
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    },
+    # Use po_token workaround if available
+    "extractor_args": {
+        "youtube": {
+            "skip": ["hls", "dash"],
+            "player_skip": ["js", "configs", "webpage"],
+        }
+    },
+    # Retry on failure
+    "retries": 5,
+    "fragment_retries": 5,
+    "skip_unavailable_fragments": True,
+    "ignoreerrors": False,
+}
+
+
+def _build_opts(video_id: str, video: bool, quality: str = "1080") -> dict:
+    opts = dict(_BASE_OPTS)
+    cookie = _get_cookie_file()
+    if cookie:
+        opts["cookiefile"] = cookie
+
+    if video:
+        opts["format"] = (
+            f"bestvideo[height<={quality}][ext=mp4]+bestaudio[ext=m4a]"
+            f"/bestvideo[height<={quality}]+bestaudio"
+            f"/best[height<={quality}]/best"
+        )
+        opts["outtmpl"]              = f"downloads/{video_id}.%(ext)s"
+        opts["merge_output_format"]  = "mp4"
+        opts["postprocessor_args"]   = ["-c:v", "copy", "-c:a", "aac"]
+    else:
+        opts["format"] = "bestaudio/best"
+        opts["outtmpl"] = f"downloads/{video_id}.%(ext)s"
+        opts["postprocessors"] = [{
+            "key": "FFmpegExtractAudio",
+            "preferredcodec": "mp3",
+            "preferredquality": "320",
+        }]
+
+    return opts
+
+
+def _build_opts_fallback(video_id: str, video: bool) -> dict:
+    """Fallback — use android client which bypasses most restrictions."""
+    opts = dict(_BASE_OPTS)
+    cookie = _get_cookie_file()
+    if cookie:
+        opts["cookiefile"] = cookie
+
+    # Android client — no bot detection
+    opts["extractor_args"] = {
+        "youtube": {"player_client": ["android"]}
+    }
+
+    if video:
+        opts["format"]              = "best[ext=mp4]/best"
+        opts["outtmpl"]             = f"downloads/{video_id}_fb.%(ext)s"
+        opts["merge_output_format"] = "mp4"
+    else:
+        opts["format"]  = "bestaudio/best"
+        opts["outtmpl"] = f"downloads/{video_id}_fb.%(ext)s"
+        opts["postprocessors"] = [{
+            "key": "FFmpegExtractAudio",
+            "preferredcodec": "mp3",
+            "preferredquality": "320",
+        }]
+
+    return opts
+
+
+def _build_opts_ios(video_id: str, video: bool) -> dict:
+    """Last resort — iOS client."""
+    opts = dict(_BASE_OPTS)
+    cookie = _get_cookie_file()
+    if cookie:
+        opts["cookiefile"] = cookie
+
+    opts["extractor_args"] = {
+        "youtube": {"player_client": ["ios"]}
+    }
+    opts["format"]  = "best"
+    opts["outtmpl"] = f"downloads/{video_id}_ios.%(ext)s"
+    return opts
 
 
 class YouTube:
@@ -79,38 +146,41 @@ class YouTube:
             r"([A-Za-z0-9_-]{11}|PL[A-Za-z0-9_-]+)([&?][^\s]*)?"
         )
 
-        self.search_cache = {}
+        self.search_cache        = {}
         self._download_semaphore = asyncio.Semaphore(3)
-
-        # Quality settings (override in config if needed)
-        self.AUDIO_QUALITY = getattr(config, "AUDIO_QUALITY", "320")
-        self.VIDEO_QUALITY = getattr(config, "VIDEO_QUALITY", "1080")
+        self.AUDIO_QUALITY       = getattr(config, "AUDIO_QUALITY", "320")
+        self.VIDEO_QUALITY       = getattr(config, "VIDEO_QUALITY", "1080")
 
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     #  HELPERS
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    def _locate_download_file(self, video_id: str, video: bool = False) -> Optional[str]:
-        pattern    = f"downloads/{video_id}*"
-        candidates = sorted([
-            p for p in glob.glob(pattern)
-            if not p.endswith((".part", ".ytdl", ".info.json", ".temp"))
-        ])
-        video_exts = {".mp4", ".mkv", ".webm", ".mov"}
-        audio_exts = {".m4a", ".webm", ".opus", ".mp3", ".ogg", ".wav", ".flac"}
+    def _locate_file(self, video_id: str, video: bool = False) -> Optional[str]:
+        # Search for any file starting with video_id
+        for pattern in [
+            f"downloads/{video_id}.*",
+            f"downloads/{video_id}_fb.*",
+            f"downloads/{video_id}_ios.*",
+        ]:
+            candidates = sorted([
+                p for p in glob.glob(pattern)
+                if not p.endswith((".part", ".ytdl", ".info.json", ".temp"))
+                and not os.path.isdir(p)
+            ])
+            video_exts = {".mp4", ".mkv", ".webm", ".mov"}
+            audio_exts = {".m4a", ".webm", ".opus", ".mp3", ".ogg", ".wav", ".flac"}
 
-        if video:
-            for p in candidates:
-                if not os.path.isdir(p) and Path(p).suffix.lower() in video_exts:
-                    return p
-        else:
-            for p in candidates:
-                if not os.path.isdir(p) and Path(p).suffix.lower() in audio_exts:
-                    return p
+            if video:
+                for p in candidates:
+                    if Path(p).suffix.lower() in video_exts:
+                        return p
+            else:
+                for p in candidates:
+                    if Path(p).suffix.lower() in audio_exts:
+                        return p
 
-        for p in candidates:
-            if not os.path.isdir(p):
-                return p
+            if candidates:
+                return candidates[0]
         return None
 
     def valid(self, url: str) -> bool:
@@ -235,63 +305,69 @@ class YouTube:
             raise
 
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    #  DOWNLOAD — yt-dlp direct (best quality)
+    #  DOWNLOAD — 3 fallback methods
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
     def _yt_download_sync(self, video_id: str, video: bool = False) -> Optional[str]:
-        """
-        Synchronous yt-dlp download — runs in executor.
-        Audio: 320kbps MP3
-        Video: best quality up to VIDEO_QUALITY (default 1080p) merged MP4
-        """
         os.makedirs("downloads", exist_ok=True)
 
-        # Check cache first
-        existing = self._locate_download_file(video_id, video)
+        # Check cache
+        existing = self._locate_file(video_id, video)
         if existing:
             logger.info(f"[YT] Cache hit: {existing}")
             return existing
 
-        url  = self.base + video_id
-        opts = _video_opts(video_id, self.VIDEO_QUALITY) if video else _audio_opts(video_id)
+        url = self.base + video_id
 
+        # ── Method 1: Normal download with browser headers ─
+        logger.info(f"[YT] Trying method 1 (browser headers): {video_id}")
         try:
+            opts = _build_opts(video_id, video, self.VIDEO_QUALITY)
             with yt_dlp.YoutubeDL(opts) as ydl:
                 ydl.download([url])
-
-            # Find downloaded file
-            result = self._locate_download_file(video_id, video)
+            result = self._locate_file(video_id, video)
             if result:
                 size_mb = os.path.getsize(result) / (1024 * 1024)
-                logger.info(
-                    f"✅ Downloaded: {result} "
-                    f"({'video ' + self.VIDEO_QUALITY + 'p' if video else 'audio 320kbps'}) "
-                    f"— {size_mb:.1f} MB"
-                )
+                logger.info(f"✅ Method 1 success: {result} — {size_mb:.1f} MB")
                 return result
-            else:
-                logger.error(f"❌ yt-dlp finished but file not found for {video_id}")
-                return None
-
-        except yt_dlp.utils.DownloadError as e:
-            err = str(e)
-            if "Sign in" in err or "bot" in err.lower():
-                logger.error(f"❌ YouTube bot detection for {video_id} — update cookies!")
-            else:
-                logger.error(f"❌ yt-dlp DownloadError for {video_id}: {e}")
-            return None
         except Exception as e:
-            logger.error(f"❌ Download error for {video_id}: {e}")
-            return None
+            logger.warning(f"⚠️ Method 1 failed: {e}")
+
+        # ── Method 2: Android client (bypasses bot detection) ─
+        logger.info(f"[YT] Trying method 2 (android client): {video_id}")
+        try:
+            opts = _build_opts_fallback(video_id, video)
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                ydl.download([url])
+            result = self._locate_file(video_id, video)
+            if result:
+                size_mb = os.path.getsize(result) / (1024 * 1024)
+                logger.info(f"✅ Method 2 success: {result} — {size_mb:.1f} MB")
+                return result
+        except Exception as e:
+            logger.warning(f"⚠️ Method 2 failed: {e}")
+
+        # ── Method 3: iOS client (last resort) ────────────
+        logger.info(f"[YT] Trying method 3 (iOS client): {video_id}")
+        try:
+            opts = _build_opts_ios(video_id, video)
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                ydl.download([url])
+            result = self._locate_file(video_id, video)
+            if result:
+                size_mb = os.path.getsize(result) / (1024 * 1024)
+                logger.info(f"✅ Method 3 success: {result} — {size_mb:.1f} MB")
+                return result
+        except Exception as e:
+            logger.warning(f"⚠️ Method 3 failed: {e}")
+
+        logger.error(f"❌ All methods failed for {video_id}")
+        return None
 
     async def _download_ytdlp(self, video_id: str, video: bool = False) -> Optional[str]:
-        """Run yt-dlp download in thread executor (non-blocking)."""
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(
-            None,
-            self._yt_download_sync,
-            video_id,
-            video
+            None, self._yt_download_sync, video_id, video
         )
 
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -299,15 +375,15 @@ class YouTube:
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
     async def _get_live_url(self, video_id: str) -> Optional[str]:
-        """Extract live stream URL using yt-dlp."""
         url  = self.base + video_id
         opts = {
+            **_BASE_OPTS,
             "format": "best",
-            "quiet": True,
-            "no_warnings": True,
-            "noplaylist": True,
-            "cookiefile": _get_cookie_file(),
         }
+        cookie = _get_cookie_file()
+        if cookie:
+            opts["cookiefile"] = cookie
+
         try:
             loop = asyncio.get_event_loop()
             def _extract():
@@ -329,12 +405,6 @@ class YouTube:
         is_live: bool = False,
         video: bool = False
     ) -> Optional[str]:
-        """
-        Main download function.
-        Audio  → 320kbps MP3 via yt-dlp
-        Video  → best quality up to 1080p MP4 via yt-dlp
-        Live   → direct stream URL
-        """
         if is_live:
             stream_url = await self._get_live_url(video_id)
             return stream_url or (self.base + video_id)
@@ -343,22 +413,20 @@ class YouTube:
             return await self._download_ytdlp(video_id, video)
 
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    #  COOKIES (original method preserved)
+    #  SAVE COOKIES
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
     async def save_cookies(self, url: str) -> None:
-        """Download and save cookies from URL."""
         try:
             os.makedirs("Elevenyts/cookies", exist_ok=True)
             async with aiohttp.ClientSession() as session:
                 async with session.get(url) as resp:
                     if resp.status == 200:
-                        cookie_data = await resp.text()
                         with open("Elevenyts/cookies/cookies.txt", "w") as f:
-                            f.write(cookie_data)
-                        logger.info("[YT] Cookies saved in Elevenyts/cookies.")
+                            f.write(await resp.text())
+                        logger.info("[YT] Cookies saved.")
                     else:
-                        logger.warning(f"[YT] Failed to fetch cookies: HTTP {resp.status}")
+                        logger.warning(f"[YT] Cookie fetch failed: HTTP {resp.status}")
         except Exception as e:
             logger.error(f"[YT] Cookie save error: {e}")
-                
+        
