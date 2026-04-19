@@ -299,4 +299,3 @@ class Thumbnail:
         except Exception as e:
             print(f"[Thumbnail] _draw() error: {e}")
             return config.DEFAULT_THUMB
-            
