@@ -379,5 +379,5 @@ class Thumbnail:
         draw.polygon(
             [(x + 11, y - 5), (x + 18, y), (x + 11, y + 5)],
             fill=col
-            )
-                          
+)
+            
