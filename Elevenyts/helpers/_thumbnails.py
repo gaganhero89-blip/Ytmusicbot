@@ -1,32 +1,26 @@
 import os
-import math
 import asyncio
 import aiohttp
-from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageEnhance
 
 from Elevenyts import config
 from Elevenyts.helpers import Track
 
-
 W, H = 1280, 720
-
 
 class Thumbnail:
 
     def __init__(self):
-        base = "Elevenyts/helpers"
         try:
-            self.f_title  = ImageFont.truetype(f"{base}/Raleway-Bold.ttf", 70)
-            self.f_artist = ImageFont.truetype(f"{base}/Raleway-Bold.ttf", 40)
-            self.f_small  = ImageFont.truetype(f"{base}/Inter-Light.ttf", 24)
-            self.f_badge  = ImageFont.truetype(f"{base}/Inter-Light.ttf", 20)
+            self.title_font  = ImageFont.truetype("arial.ttf", 58)
+            self.artist_font = ImageFont.truetype("arial.ttf", 34)
+            self.small_font  = ImageFont.truetype("arial.ttf", 22)
         except:
-            f = ImageFont.load_default()
-            self.f_title = self.f_artist = self.f_small = self.f_badge = f
+            self.title_font = self.artist_font = self.small_font = ImageFont.load_default()
 
     async def _fetch(self, path, url):
-        async with aiohttp.ClientSession() as s:
-            async with s.get(url) as r:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url) as r:
                 with open(path, "wb") as f:
                     f.write(await r.read())
         return path
@@ -45,138 +39,88 @@ class Thumbnail:
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, self._draw, temp, out, song)
 
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    def _draw(self, temp, output, song):
-        raw = Image.open(temp).convert("RGBA")
+    def _draw(self, temp, out, song):
+        raw = Image.open(temp).convert("RGB")
 
-        # ── BACKGROUND ──
+        # ─── BACKGROUND ───
         bg = raw.resize((W, H))
-        bg = bg.filter(ImageFilter.GaussianBlur(60))
-        bg = ImageEnhance.Brightness(bg).enhance(0.15)
+        bg = bg.filter(ImageFilter.GaussianBlur(30))
+        bg = ImageEnhance.Brightness(bg).enhance(0.4)
 
-        overlay = Image.new("RGBA", (W, H), (10, 5, 25, 220))
-        bg = Image.alpha_composite(bg, overlay)
+        overlay = Image.new("RGBA", (W, H), (10, 10, 25, 180))
+        bg = Image.alpha_composite(bg.convert("RGBA"), overlay)
 
-        draw = ImageDraw.Draw(bg, "RGBA")
+        draw = ImageDraw.Draw(bg)
 
-        # ── TOP BAR ──
-        draw.rounded_rectangle((60,30,300,80), 20,
-            fill=(255,255,255,10), outline=(255,120,255,80))
-        draw.text((90,45), "HIGH QUALITY\nAUDIO",
-            fill=(220,180,255), font=self.f_small)
+        # ─── ALBUM ART ───
+        art = raw.resize((400, 400))
+        mask = Image.new("L", (400, 400), 0)
+        ImageDraw.Draw(mask).rounded_rectangle((0,0,400,400), radius=30, fill=255)
+        bg.paste(art, (80, 160), mask)
 
-        draw.rounded_rectangle((980,30,1220,80), 20,
-            fill=(255,255,255,10), outline=(255,120,255,80))
-        draw.text((1020,45), "24/7\nMUSIC",
-            fill=(220,180,255), font=self.f_small)
+        # ─── GLASS PANEL ───
+        panel = Image.new("RGBA", (650, 450), (255,255,255,20))
+        pd = ImageDraw.Draw(panel)
+        pd.rounded_rectangle((0,0,650,450), radius=25, outline=(255,255,255,40))
+        bg.paste(panel, (520, 130), panel)
 
-        tag = "FEEL THE BEAT, LIVE THE MUSIC"
-        tw = int(draw.textlength(tag, font=self.f_small))
-        draw.text(((W-tw)//2, 50), tag,
-            fill=(200,160,255,180), font=self.f_small)
+        draw = ImageDraw.Draw(bg)
 
-        # ── ALBUM ART ──
-        art = raw.resize((420,420))
-        mask = Image.new("L",(420,420),0)
-        ImageDraw.Draw(mask).rounded_rectangle((0,0,420,420),40,fill=255)
-        bg.paste(art,(60,140),mask)
+        # ─── TEXT ───
+        title = song.title[:22]
+        artist = getattr(song, "artist", "Unknown")
 
-        # glow border
-        glow = Image.new("RGBA",(W,H),(0,0,0,0))
-        gd = ImageDraw.Draw(glow)
-        gd.rounded_rectangle((60,140,480,560),40,
-            outline=(255,80,200,120), width=3)
-        bg = Image.alpha_composite(bg, glow)
+        draw.text((550, 170), "NOW PLAYING", font=self.small_font, fill=(255,100,140))
+        draw.text((550, 210), title, font=self.title_font, fill=(255,255,255))
+        draw.text((550, 280), artist, font=self.artist_font, fill=(180,180,255))
 
-        draw = ImageDraw.Draw(bg,"RGBA")
+        # ─── PROGRESS BAR (GRADIENT) ───
+        bar_x, bar_y = 550, 360
+        bar_w = 500
 
-        # ── RIGHT PANEL ──
-        draw.rounded_rectangle((520,120,1240,600),30,
-            fill=(255,255,255,8), outline=(255,255,255,20))
+        draw.rectangle((bar_x, bar_y, bar_x+bar_w, bar_y+6), fill=(70,70,90))
 
-        # ── NOW PLAYING ──
-        draw.rounded_rectangle((560,140,760,175),18,
-            fill=(255,70,120,220))
-        draw.text((585,148),"NOW PLAYING",
-            fill=(255,255,255),font=self.f_badge)
+        progress = int(bar_w * 0.25)
 
-        # ── TITLE ──
-        title = song.title[:22] + "…" if len(song.title)>22 else song.title
-        draw.text((560,200), title,
-            fill=(255,255,255), font=self.f_title)
+        for i in range(progress):
+            r = int(255 - (i/progress)*80)
+            g = int(80)
+            b = int(150 + (i/progress)*80)
+            draw.rectangle((bar_x+i, bar_y, bar_x+i+1, bar_y+6), fill=(r,g,b))
 
-        # ── ARTIST ──
-        artist = getattr(song,"artist",None) or "Adam Music Bot"
-        draw.text((560,280), artist,
-            fill=(200,150,255), font=self.f_artist)
+        # knob
+        draw.ellipse((bar_x+progress-8, bar_y-6, bar_x+progress+8, bar_y+10), fill=(255,255,255))
 
-        # ── PROGRESS BAR ──
-        bx, by, bw = 560, 360, 520
-        draw.rounded_rectangle((bx,by,bx+bw,by+6),4,
-            fill=(60,60,80))
+        # ─── TIME ───
+        draw.text((bar_x, bar_y+12), "00:45", font=self.small_font, fill=(160,160,200))
+        draw.text((bar_x+bar_w-60, bar_y+12), song.duration, font=self.small_font, fill=(160,160,200))
 
-        prog = int(bw*0.3)
-        for i in range(prog):
-            t=i/prog
-            color=(int(255*(1-t)+180*t),80,int(150*(1-t)+255*t))
-            draw.rectangle((bx+i,by,bx+i+1,by+6),fill=color)
+        # ─── PLAY BUTTON ───
+        cx = bar_x + bar_w//2
+        cy = bar_y + 90
 
-        draw.ellipse((bx+prog-8,by-6,bx+prog+8,by+10),
-            fill=(255,255,255))
+        # glow
+        for r,a in [(40,40),(30,60),(20,100)]:
+            glow = Image.new("RGBA", (W,H), (0,0,0,0))
+            gd = ImageDraw.Draw(glow)
+            gd.ellipse((cx-r, cy-r, cx+r, cy+r), fill=(255,80,150,a))
+            bg = Image.alpha_composite(bg, glow)
 
-        # time
-        draw.text((bx,by+12),"00:45",
-            fill=(150,150,200),font=self.f_small)
-        draw.text((bx+bw-70,by+12), song.duration,
-            fill=(150,150,200),font=self.f_small)
+        draw = ImageDraw.Draw(bg)
 
-        # ── CONTROLS ──
-        cx = bx + bw//2
-        draw.ellipse((cx-35,440-35,cx+35,440+35),
-            fill=(255,80,200,40))
-        draw.ellipse((cx-28,440-28,cx+28,440+28),
-            fill=(255,255,255))
-        draw.rectangle((cx-8,430,cx-2,450),fill=(20,20,40))
-        draw.rectangle((cx+2,430,cx+8,450),fill=(20,20,40))
+        # button
+        draw.ellipse((cx-25, cy-25, cx+25, cy+25), fill=(255,80,150))
 
-        # ── WAVEFORM ──
-        for i in range(18):
-            h = 10 + (i%5)*8
-            x = 1100 + i*8
-            draw.rectangle((x,380-h,x+4,380+h),
-                fill=(200,100,255,180))
+        # pause icon
+        draw.rectangle((cx-6, cy-10, cx-2, cy+10), fill=(0,0,0))
+        draw.rectangle((cx+2, cy-10, cx+6, cy+10), fill=(0,0,0))
 
-        # ── FEATURE BAR ──
-        fy=520
-        draw.rounded_rectangle((520,fy,1240,fy+80),25,
-            fill=(255,255,255,10))
+        # ─── SAVE ───
+        bg.convert("RGB").save(out, "PNG", quality=95)
 
-        feats=["HIGH QUALITY","NO LAG","SMART QUEUE","24/7"]
-        x=560
-        for f in feats:
-            draw.text((x,fy+25),f,
-                fill=(220,180,255),font=self.f_small)
-            x+=180
+        try:
+            os.remove(temp)
+        except:
+            pass
 
-        # ── BIG BRAND ──
-        draw.text((80,600),"ADAM",
-            fill=(255,120,220),font=self.f_title)
-        draw.text((80,660),"MUSIC BOT",
-            fill=(200,150,255),font=self.f_artist)
-
-        # ── JOIN BOX ──
-        draw.rounded_rectangle((850,610,1240,700),25,
-            fill=(255,255,255,10),
-            outline=(255,120,255,120))
-        draw.text((900,640),"JOIN VOICE CHAT",
-            fill=(255,180,255),font=self.f_artist)
-        draw.text((900,675),"Enjoy Together",
-            fill=(180,150,220),font=self.f_small)
-
-        # ── SAVE ──
-        bg.convert("RGB").save(output,"PNG",optimize=True)
-
-        try: os.remove(temp)
-        except: pass
-
-        return output
+        return out
