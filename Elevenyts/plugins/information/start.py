@@ -1,4 +1,5 @@
 from pyrogram import enums, errors, filters, types
+from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from Elevenyts import app, config, db, lang
 from Elevenyts.helpers import buttons, utils
@@ -8,26 +9,63 @@ from Elevenyts.helpers import buttons, utils
 @lang.language()
 async def _help(_, m: types.Message):
     """Handle /help command in private chats - shows help menu with image."""
-    # Auto-delete command message
     try:
         await m.delete()
     except Exception:
         pass
-    
+
     try:
         await m.reply_photo(
-            photo=config.START_IMG,  # Use same image as start command
+            photo=config.START_IMG,
             caption=m.lang["help_menu"],
             reply_markup=buttons.help_markup(m.lang),
             quote=True,
         )
     except Exception:
-        # Fallback to text if photo fails
         await m.reply_text(
             text=m.lang["help_menu"],
             reply_markup=buttons.help_markup(m.lang),
             quote=True,
         )
+
+
+def build_start_keyboard(lang: dict, private: bool, is_owner: bool = False) -> InlineKeyboardMarkup:
+    """
+    Build start keyboard with colored URL buttons.
+    URL buttons appear colored (green) in Telegram.
+    Owner gets an extra 👑 Adam button on top.
+    """
+    keyboard = []
+
+    # Owner button — only for owner, on top
+    if is_owner and private:
+        keyboard.append([
+            InlineKeyboardButton("👑 Adam — Owner Panel", callback_data="owner_panel")
+        ])
+
+    # Row 1 — colored URL buttons (these show as green in Telegram)
+    keyboard.append([
+        InlineKeyboardButton("➕ " + lang.get("add_me", "Add Me"), url=f"https://t.me/{app.username}?startgroup=true"),
+        InlineKeyboardButton("💬 " + lang.get("support", "Support"), url=config.SUPPORT_CHAT),
+    ])
+
+    # Row 2
+    keyboard.append([
+        InlineKeyboardButton("📢 " + lang.get("channel", "Channel"), url=config.SUPPORT_CHANNEL),
+        InlineKeyboardButton("❓ " + lang.get("help", "Help"), url=f"https://t.me/{app.username}?start=help"),
+    ])
+
+    return InlineKeyboardMarkup(keyboard)
+
+
+def build_group_keyboard(lang: dict) -> InlineKeyboardMarkup:
+    """Build keyboard for group start message."""
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("➕ " + lang.get("add_me", "Add Me"), url=f"https://t.me/{app.username}?startgroup=true"),
+            InlineKeyboardButton("💬 " + lang.get("support", "Support"), url=config.SUPPORT_CHAT),
+        ]
+    ])
 
 
 @app.on_message(filters.command(["start"]))
@@ -38,6 +76,7 @@ async def start(_, message: types.Message):
 
     - In private chat: Shows welcome message with inline buttons
     - In group chat: Shows short welcome message
+    - Owner gets extra 👑 Adam button on top
     - Adds new users to database
     - Sends log to logger group for new users
     """
@@ -47,7 +86,7 @@ async def start(_, message: types.Message):
             await message.delete()
         except Exception:
             pass
-    
+
     # Skip if message from channel or anonymous admin
     if not message.from_user:
         return
@@ -63,20 +102,21 @@ async def start(_, message: types.Message):
     # Determine if chat is private or group
     private = message.chat.type == enums.ChatType.PRIVATE
 
-    # Choose appropriate welcome message
+    # Check if owner
+    is_owner = message.from_user.id == config.OWNER_ID
+
+    # Choose appropriate welcome message (UNCHANGED from original)
     _text = (
         message.lang["start_pm"].format(message.from_user.first_name, app.name)
         if private
         else message.lang["start_gp"].format(app.name)
     )
 
-    # Build keyboard — add owner button on top if user is owner (private only)
-    key = buttons.start_key(message.lang, private)
-    if message.from_user.id == config.OWNER_ID and private:
-        from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
-        owner_button = [[InlineKeyboardButton("👑 Adam", callback_data="owner_panel")]]
-        existing = key.inline_keyboard if key else []
-        key = InlineKeyboardMarkup(owner_button + existing)
+    # Build keyboard with colored buttons + owner button if applicable
+    if private:
+        key = build_start_keyboard(message.lang, private=True, is_owner=is_owner)
+    else:
+        key = build_group_keyboard(message.lang)
 
     try:
         await message.reply_photo(
@@ -86,7 +126,6 @@ async def start(_, message: types.Message):
             quote=not private,
         )
     except errors.ChatSendPhotosForbidden:
-        # If photos are not allowed, send text only
         await message.reply_text(
             text=_text,
             reply_markup=key,
@@ -96,31 +135,21 @@ async def start(_, message: types.Message):
     # For private chats, add user to database if new
     if private:
         if await db.is_user(message.from_user.id):
-            return  # User already exists, no need to add
-        # Log new user to logger group
+            return
         await utils.send_log(message)
-        # Add user to database
         return await db.add_user(message.from_user.id)
 
 
 @app.on_message(filters.command(["playmode", "settings"]) & filters.group & ~app.bl_users)
 @lang.language()
 async def settings(_, message: types.Message):
-    """
-    Handle /playmode or /settings command - show group settings.
-
-    Displays:
-    - Play mode (everyone or admin only)
-    - Current language
-    - Options to change settings
-    """
-    # Auto-delete command message
+    """Handle /playmode or /settings command - show group settings."""
     try:
         await message.delete()
     except Exception:
         pass
-    
-    admin_only = await db.get_play_mode(message.chat.id)  # Get play mode setting
+
+    admin_only = await db.get_play_mode(message.chat.id)
     _language = "en"
     await message.reply_text(
         text=message.lang["start_settings"].format(message.chat.title),
@@ -134,20 +163,13 @@ async def settings(_, message: types.Message):
 @app.on_message(filters.new_chat_members, group=7)
 @lang.language()
 async def _new_member(_, message: types.Message):
-    """
-    Handle new member events - detect when bot is added to groups.
-
-    - Leaves non-supergroup chats
-    - Adds new groups to database
-    """
-    # Only work in supergroups (not basic groups)
+    """Handle new member events - detect when bot is added to groups."""
     if message.chat.type != enums.ChatType.SUPERGROUP:
         return await message.chat.leave()
 
-    # Check each new member
     for member in message.new_chat_members:
-        if member.id == app.id:  # Bot itself was added
+        if member.id == app.id:
             if await db.is_chat(message.chat.id):
-                return  # Chat already in database
-            # Add chat to database (log is sent from new_chat.py with photo)
+                return
             await db.add_chat(message.chat.id)
+        
