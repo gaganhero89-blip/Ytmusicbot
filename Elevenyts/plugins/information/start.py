@@ -37,10 +37,10 @@ def build_start_keyboard(lang: dict, private: bool, is_owner: bool = False) -> I
     """
     keyboard = []
 
-    # Owner button — only for owner, on top
+    # Owner button — only for owner, on top (callback so it's always visible)
     if is_owner and private:
         keyboard.append([
-            InlineKeyboardButton("👑 Adam — Owner Panel", callback_data="owner_panel")
+            InlineKeyboardButton("👑 ᴀᴅᴀᴍ — ᴏᴡɴᴇʀ ᴘᴀɴᴇʟ 👑", callback_data="owner_panel")
         ])
 
     # Row 1 — colored URL buttons (these show as green in Telegram)
@@ -102,8 +102,8 @@ async def start(_, message: types.Message):
     # Determine if chat is private or group
     private = message.chat.type == enums.ChatType.PRIVATE
 
-    # Check if owner
-    is_owner = message.from_user.id == config.OWNER_ID
+    # Check if owner — ensure int comparison
+    is_owner = message.from_user.id == int(config.OWNER_ID)
 
     # Choose appropriate welcome message (UNCHANGED from original)
     _text = (
@@ -160,6 +160,36 @@ async def settings(_, message: types.Message):
     )
 
 
+@app.on_callback_query(filters.regex("^owner_panel$"))
+async def owner_panel(_, query: types.CallbackQuery):
+    """Owner panel — shows owner-only options."""
+    if query.from_user.id != int(config.OWNER_ID):
+        return await query.answer("❌ Sirf Owner use kar sakta hai!", show_alert=True)
+
+    await query.message.edit_reply_markup(
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("📊 Stats", callback_data="op_stats"),
+             InlineKeyboardButton("📢 Broadcast", callback_data="op_broadcast")],
+            [InlineKeyboardButton("🔄 Restart", callback_data="op_restart"),
+             InlineKeyboardButton("🔧 Maintenance", callback_data="op_maintenance")],
+            [InlineKeyboardButton("👥 Sudo Users", callback_data="op_sudo"),
+             InlineKeyboardButton("🚫 Blacklist", callback_data="op_blacklist")],
+            [InlineKeyboardButton("◀️ Back", callback_data="op_back")],
+        ])
+    )
+    await query.answer("👑 Welcome, Adam!")
+
+
+@app.on_callback_query(filters.regex("^op_back$"))
+async def owner_panel_back(_, query: types.CallbackQuery):
+    if query.from_user.id != int(config.OWNER_ID):
+        return await query.answer("❌ Not allowed!", show_alert=True)
+    # Restore original start keyboard
+    key = build_start_keyboard(query.message.reply_markup and {}, private=True, is_owner=True)
+    await query.message.edit_reply_markup(reply_markup=key)
+    await query.answer()
+
+
 @app.on_message(filters.new_chat_members, group=7)
 @lang.language()
 async def _new_member(_, message: types.Message):
@@ -172,4 +202,4 @@ async def _new_member(_, message: types.Message):
             if await db.is_chat(message.chat.id):
                 return
             await db.add_chat(message.chat.id)
-        
+                                 
