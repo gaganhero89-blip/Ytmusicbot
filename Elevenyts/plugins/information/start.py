@@ -70,7 +70,14 @@ async def start(_, message: types.Message):
         else message.lang["start_gp"].format(app.name)
     )
 
+    # Build keyboard — add owner button on top if user is owner (private only)
     key = buttons.start_key(message.lang, private)
+    if message.from_user.id == config.OWNER_ID and private:
+        from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+        owner_button = [[InlineKeyboardButton("👑 Adam", callback_data="owner_panel")]]
+        existing = key.inline_keyboard if key else []
+        key = InlineKeyboardMarkup(owner_button + existing)
+
     try:
         await message.reply_photo(
             photo=config.START_IMG,
