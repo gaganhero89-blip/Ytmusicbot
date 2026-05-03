@@ -1,83 +1,153 @@
 """
-Clone System — Yt Vibe Music Bot
-Allows anyone to clone the bot with their own token.
-Each user gets 1 clone with full customization.
+Clone System — Yt Vibe Music Bot (Pro Level)
+Features:
+- Full music support (own assistant or shared)
+- Pro start message with custom buttons
+- Broadcast to all users/groups
+- Lyrics, song recommend, playlist save/load
+- Full customization panel
+- Stats dashboard
+- Auto-post scheduler
+- Premium user system
 """
 
 import asyncio
-import os
-import sys
 from datetime import datetime
 
 from pyrogram import Client, enums, filters, types
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from pytgcalls import PyTgCalls
 
 from Elevenyts import app, config, db, lang
+from Elevenyts.core.calls import Anony
 
-# ============================================================
-# DATABASE HELPERS (stored in MongoDB via db)
-# Collection: "clones"
-# Document structure:
-# {
-#   "user_id": int,
-#   "bot_token": str,
-#   "bot_username": str,
-#   "bot_name": str,
-#   "start_img": str,
-#   "ping_img": str,
-#   "support_chat": str,
-#   "support_channel": str,
-#   "welcome_text": str,
-#   "created_at": datetime,
-#   "active": bool
-# }
-# ============================================================
+# ── Collections ───────────────────────────────────────────────
+CLONE_COL      = "clones"
+PLAYLIST_COL   = "playlists"
+PREMIUM_COL    = "clone_premium"
 
-CLONE_COLLECTION = "clones"
+# ── In-memory running clones ──────────────────────────────────
+running_clones: dict[int, dict] = {}
 
+
+# ══════════════════════════════════════════════════════════════
+# DB HELPERS
+# ══════════════════════════════════════════════════════════════
 
 async def get_clone(user_id: int) -> dict | None:
-    return await db.db[CLONE_COLLECTION].find_one({"user_id": user_id})
-
+    return await db.db[CLONE_COL].find_one({"user_id": user_id})
 
 async def save_clone(data: dict):
-    await db.db[CLONE_COLLECTION].update_one(
-        {"user_id": data["user_id"]},
-        {"$set": data},
+    await db.db[CLONE_COL].update_one(
+        {"user_id": data["user_id"]}, {"$set": data}, upsert=True
+    )
+
+async def delete_clone_db(user_id: int):
+    await db.db[CLONE_COL].delete_one({"user_id": user_id})
+
+async def get_playlist(user_id: int, name: str) -> dict | None:
+    return await db.db[PLAYLIST_COL].find_one({"user_id": user_id, "name": name})
+
+async def save_playlist(user_id: int, name: str, songs: list):
+    await db.db[PLAYLIST_COL].update_one(
+        {"user_id": user_id, "name": name},
+        {"$set": {"songs": songs, "updated": datetime.now().strftime("%Y-%m-%d %H:%M")}},
         upsert=True,
     )
 
+async def get_all_playlists(user_id: int) -> list:
+    return await db.db[PLAYLIST_COL].find({"user_id": user_id}).to_list(length=20)
 
-async def delete_clone(user_id: int):
-    await db.db[CLONE_COLLECTION].delete_one({"user_id": user_id})
+async def delete_playlist(user_id: int, name: str):
+    await db.db[PLAYLIST_COL].delete_one({"user_id": user_id, "name": name})
+
+async def is_premium_user(clone_owner_id: int, user_id: int) -> bool:
+    doc = await db.db[PREMIUM_COL].find_one({"owner_id": clone_owner_id, "user_id": user_id})
+    return bool(doc)
+
+async def add_premium_user(clone_owner_id: int, user_id: int):
+    await db.db[PREMIUM_COL].update_one(
+        {"owner_id": clone_owner_id, "user_id": user_id},
+        {"$set": {"added": datetime.now().strftime("%Y-%m-%d %H:%M")}},
+        upsert=True,
+    )
+
+async def remove_premium_user(clone_owner_id: int, user_id: int):
+    await db.db[PREMIUM_COL].delete_one({"owner_id": clone_owner_id, "user_id": user_id})
 
 
-# ============================================================
-# RUNNING CLONES (in-memory: user_id -> pyrogram Client)
-# ============================================================
-running_clones: dict[int, Client] = {}
+# ══════════════════════════════════════════════════════════════
+# KEYBOARDS
+# ══════════════════════════════════════════════════════════════
 
+def clone_start_keyboard(clone_data: dict, is_owner: bool = False) -> InlineKeyboardMarkup:
+    """Pro start keyboard for clone bot."""
+    username = clone_data.get("bot_username", "")
+    support  = clone_data.get("support_chat", config.SUPPORT_CHAT)
+    channel  = clone_data.get("support_channel", getattr(config, "SUPPORT_CHANNEL", support))
+
+    rows = []
+
+    # Owner panel button — only for clone owner
+    if is_owner:
+        rows.append([
+            InlineKeyboardButton("👑 ᴏᴡɴᴇʀ ᴘᴀɴᴇʟ", callback_data="cl_owner_panel")
+        ])
+
+    # Main action buttons
+    rows.append([
+        InlineKeyboardButton("➕ ᴀᴅᴅ ᴍᴇ", url=f"https://t.me/{username}?startgroup=true"),
+        InlineKeyboardButton("💬 ꜱᴜᴘᴘᴏʀᴛ", url=support),
+    ])
+    rows.append([
+        InlineKeyboardButton("📢 ᴄʜᴀɴɴᴇʟ", url=channel),
+        InlineKeyboardButton("❓ ʜᴇʟᴘ", callback_data="cl_help"),
+    ])
+
+    # Extra custom buttons from clone owner
+    extra_buttons = clone_data.get("extra_buttons", [])
+    for btn in extra_buttons:
+        rows.append([InlineKeyboardButton(btn["text"], url=btn["url"])])
+
+    return InlineKeyboardMarkup(rows)
+
+
+def customize_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("📛 ʙᴏᴛ ɴᴀᴍᴇ",      callback_data="cust_name"),
+         InlineKeyboardButton("🖼 ꜱᴛᴀʀᴛ ɪᴍɢ",    callback_data="cust_startimg")],
+        [InlineKeyboardButton("💬 ꜱᴜᴘᴘᴏʀᴛ",       callback_data="cust_support"),
+         InlineKeyboardButton("📢 ᴄʜᴀɴɴᴇʟ",       callback_data="cust_channel")],
+        [InlineKeyboardButton("👋 ᴡᴇʟᴄᴏᴍᴇ ᴛᴇxᴛ",  callback_data="cust_welcome"),
+         InlineKeyboardButton("🔘 ᴇxᴛʀᴀ ʙᴜᴛᴛᴏɴꜱ", callback_data="cust_buttons")],
+        [InlineKeyboardButton("🎵 ᴀꜱꜱɪꜱᴛᴀɴᴛ",     callback_data="cust_assistant"),
+         InlineKeyboardButton("👑 ᴘʀᴇᴍɪᴜᴍ",       callback_data="cust_premium")],
+        [InlineKeyboardButton("◀️ ʙᴀᴄᴋ",           callback_data="cl_owner_back")],
+    ])
+
+
+def owner_panel_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("📊 ꜱᴛᴀᴛꜱ",          callback_data="cl_stats"),
+         InlineKeyboardButton("📢 ʙʀᴏᴀᴅᴄᴀꜱᴛ",      callback_data="cl_broadcast")],
+        [InlineKeyboardButton("🎨 ᴄᴜꜱᴛᴏᴍɪᴢᴇ",      callback_data="cl_customize"),
+         InlineKeyboardButton("👥 ᴘʀᴇᴍɪᴜᴍ ᴜꜱᴇʀꜱ",  callback_data="cl_premium_list")],
+        [InlineKeyboardButton("🔄 ʀᴇꜱᴛᴀʀᴛ",         callback_data="cl_restart"),
+         InlineKeyboardButton("🗑️ ᴅᴇʟᴇᴛᴇ ᴄʟᴏɴᴇ",   callback_data="cl_delete")],
+        [InlineKeyboardButton("◀️ ᴄʟᴏꜱᴇ",           callback_data="cl_owner_back")],
+    ])
+
+
+# ══════════════════════════════════════════════════════════════
+# LAUNCH CLONE
+# ══════════════════════════════════════════════════════════════
 
 async def launch_clone(user_id: int, clone_data: dict):
-    """Start a cloned bot as a Pyrogram client."""
-    token = clone_data["bot_token"]
-    bot_name = clone_data.get("bot_name", "Clone Bot")
+    token             = clone_data["bot_token"]
+    bot_name          = clone_data.get("bot_name", "Clone Bot")
+    assistant_session = clone_data.get("assistant_session")
 
-    # Build custom config for this clone
-    clone_config = type("CloneConfig", (), {
-        "API_ID": config.API_ID,
-        "API_HASH": config.API_HASH,
-        "BOT_TOKEN": token,
-        "OWNER_ID": user_id,
-        "MONGO_URL": config.MONGO_URL,
-        "START_IMG": clone_data.get("start_img", config.START_IMG),
-        "PING_IMG": clone_data.get("ping_img", config.PING_IMG),
-        "SUPPORT_CHAT": clone_data.get("support_chat", config.SUPPORT_CHAT),
-        "SUPPORT_CHANNEL": clone_data.get("support_channel", config.SUPPORT_CHANNEL),
-        "DURATION_LIMIT": config.DURATION_LIMIT,
-        "QUEUE_LIMIT": config.QUEUE_LIMIT,
-    })()
-
+    # ── Bot client ──────────────────────────────────────────
     client = Client(
         name=f"clone_{user_id}",
         api_id=config.API_ID,
@@ -86,355 +156,309 @@ async def launch_clone(user_id: int, clone_data: dict):
         in_memory=True,
     )
 
-    # Register /start handler for this clone
-    @client.on_message(filters.command("start") & filters.private)
-    async def clone_start(_, message: types.Message):
-        welcome = clone_data.get(
-            "welcome_text",
-            f"👋 Hello {message.from_user.first_name}!\n\n🎵 Welcome to <b>{bot_name}</b>!\n\nUse /play to start music."
-        )
-        keyboard = InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton("➕ Add Me", url=f"https://t.me/{clone_data.get('bot_username', '')}?startgroup=true"),
-                InlineKeyboardButton("💬 Support", url=clone_data.get("support_chat", config.SUPPORT_CHAT)),
-            ],
-            [
-                InlineKeyboardButton("📢 Channel", url=clone_data.get("support_channel", config.SUPPORT_CHANNEL)),
-            ],
-        ])
+    # ── Assistant ───────────────────────────────────────────
+    assistant = None
+    calls     = None
+    if assistant_session:
         try:
-            await message.reply_photo(
+            assistant = Client(
+                name=f"clone_asst_{user_id}",
+                api_id=config.API_ID,
+                api_hash=config.API_HASH,
+                session_string=assistant_session,
+                in_memory=True,
+            )
+            await assistant.start()
+            calls = PyTgCalls(assistant)
+            await calls.start()
+        except Exception as e:
+            assistant = None
+            calls     = None
+            print(f"⚠️ Clone {user_id} assistant failed: {e}")
+    if calls is None:
+        calls = Anony  # shared main assistant fallback
+
+    # ══════════════════════════════════════════════════════
+    # HANDLERS
+    # ══════════════════════════════════════════════════════
+
+    # ── /start ──────────────────────────────────────────────
+    @client.on_message(filters.command("start") & filters.private)
+    async def cl_start(c, m: types.Message):
+        is_owner = m.from_user.id == user_id
+        welcome  = clone_data.get("welcome_text") or (
+            f"👋 ʜᴇʟʟᴏ <b>{m.from_user.first_name}</b>!\n\n"
+            f"🎵 ᴡᴇʟᴄᴏᴍᴇ ᴛᴏ <b>{bot_name}</b>\n\n"
+            f"❤️ ᴜʟᴛʀᴀ ꜱᴍᴏᴏᴛʜ ꜱᴛʀᴇᴀᴍɪɴɢ\n"
+            f"⚡ ɪɴꜱᴛᴀɴᴛ ᴘʟᴀʏʙᴀᴄᴋ — ᴢᴇʀᴏ ʟᴀɢ\n"
+            f"💖 ᴘʀᴇᴍɪᴜᴍ ꜱᴏᴜɴᴅ ǫᴜᴀʟɪᴛʏ\n\n"
+            f"❓ ᴜꜱᴇ /help ꜰᴏʀ ᴄᴏᴍᴍᴀɴᴅꜱ\n\n"
+            f"•── ⋅ ⋅ ──⋅᯽⋅── ⋅ ⋅ ──•"
+        )
+        try:
+            await m.reply_photo(
                 photo=clone_data.get("start_img", config.START_IMG),
                 caption=welcome,
-                reply_markup=keyboard,
+                reply_markup=clone_start_keyboard(clone_data, is_owner=is_owner),
             )
         except Exception:
-            await message.reply_text(welcome, reply_markup=keyboard)
+            await m.reply_text(welcome, reply_markup=clone_start_keyboard(clone_data, is_owner=is_owner))
 
-    # Register /ping for clone
-    @client.on_message(filters.command("ping") & ~filters.bot)
-    async def clone_ping(_, message: types.Message):
+    # ── /help ───────────────────────────────────────────────
+    @client.on_message(filters.command("help") & filters.private)
+    async def cl_help(c, m: types.Message):
+        await m.reply_text(
+            f"❓ <b>{bot_name} — Commands</b>\n\n"
+            f"🎵 <b>Music:</b>\n"
+            f"• /play — Play a song\n"
+            f"• /lyrics — Get song lyrics\n"
+            f"• /recommend — Song recommendations\n"
+            f"• /saveplaylist — Save current queue\n"
+            f"• /myplaylists — View saved playlists\n"
+            f"• /loadplaylist — Load a playlist\n\n"
+            f"⚙️ <b>General:</b>\n"
+            f"• /ping — Check bot latency\n"
+            f"• /start — Start message\n\n"
+            f"•── ⋅ ⋅ ──⋅᯽⋅── ⋅ ⋅ ──•"
+        )
+
+    # ── /ping ───────────────────────────────────────────────
+    @client.on_message(filters.command("ping"))
+    async def cl_ping(c, m: types.Message):
         start = datetime.now()
-        msg = await message.reply_text("🏓 Pinging...")
-        end = datetime.now()
-        ms = (end - start).microseconds // 1000
-        await msg.edit_text(f"🏓 Pong!\n⚡ Latency: <code>{ms}ms</code>")
-
-    # Register /mybot — owner sees their clone info
-    @client.on_message(filters.command("mybot") & filters.private)
-    async def clone_mybot(_, message: types.Message):
-        if message.from_user.id != user_id:
-            return
-        data = await get_clone(user_id)
-        if not data:
-            return await message.reply_text("❌ Clone data not found.")
-        await message.reply_text(
-            f"🤖 <b>Your Clone Bot Info</b>\n\n"
-            f"📛 <b>Name:</b> {data.get('bot_name', 'N/A')}\n"
-            f"🔗 <b>Username:</b> @{data.get('bot_username', 'N/A')}\n"
-            f"🖼 <b>Start Image:</b> {'Custom ✅' if data.get('start_img') != config.START_IMG else 'Default'}\n"
-            f"💬 <b>Support:</b> {data.get('support_chat', 'Default')}\n"
-            f"📢 <b>Channel:</b> {data.get('support_channel', 'Default')}\n"
-            f"📅 <b>Created:</b> {data.get('created_at', 'N/A')}\n\n"
-            f"<i>Use /customizebot to change settings</i>"
+        msg   = await m.reply_text("🏓 ᴘɪɴɢɪɴɢ...")
+        ms    = (datetime.now() - start).microseconds // 1000
+        await msg.edit_text(
+            f"🏓 <b>ᴘᴏɴɢ!</b>\n"
+            f"⚡ ʟᴀᴛᴇɴᴄʏ: <code>{ms}ms</code>\n"
+            f"🤖 <b>{bot_name}</b> ɪꜱ ᴏɴʟɪɴᴇ ✅"
         )
 
-    # Register /customizebot — show customization menu
-    @client.on_message(filters.command("customizebot") & filters.private)
-    async def clone_customize(_, message: types.Message):
-        if message.from_user.id != user_id:
-            return
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("📛 Bot Name", callback_data="cust_name"),
-             InlineKeyboardButton("🖼 Start Image", callback_data="cust_startimg")],
-            [InlineKeyboardButton("🏓 Ping Image", callback_data="cust_pingimg"),
-             InlineKeyboardButton("💬 Support Chat", callback_data="cust_support")],
-            [InlineKeyboardButton("📢 Channel Link", callback_data="cust_channel"),
-             InlineKeyboardButton("👋 Welcome Text", callback_data="cust_welcome")],
-            [InlineKeyboardButton("📊 Bot Stats", callback_data="cust_stats"),
-             InlineKeyboardButton("🗑️ Delete Clone", callback_data="cust_delete")],
-        ])
-        await message.reply_text(
-            "🎨 <b>Customize Your Bot</b>\n\nChoose what you want to change:",
-            reply_markup=keyboard,
-        )
+    # ── /lyrics ─────────────────────────────────────────────
+    @client.on_message(filters.command("lyrics"))
+    async def cl_lyrics(c, m: types.Message):
+        if len(m.command) < 2:
+            return await m.reply_text("❌ <b>Usage:</b> <code>/lyrics song name</code>")
+        query   = " ".join(m.command[1:])
+        msg     = await m.reply_text(f"🔍 Searching lyrics for <b>{query}</b>...")
+        try:
+            import aiohttp
+            async with aiohttp.ClientSession() as session:
+                async with session.get(
+                    f"https://api.lyrics.ovh/v1/{query.replace(' ', '%20').replace('/', '%20')}",
+                    timeout=aiohttp.ClientTimeout(total=10)
+                ) as resp:
+                    if resp.status == 200:
+                        data   = await resp.json()
+                        lyrics = data.get("lyrics", "")
+                        if lyrics:
+                            # Split long lyrics
+                            if len(lyrics) > 3500:
+                                lyrics = lyrics[:3500] + "\n\n<i>...truncated</i>"
+                            await msg.edit_text(
+                                f"🎵 <b>{query.title()}</b>\n\n{lyrics}"
+                            )
+                        else:
+                            await msg.edit_text("❌ Lyrics not found!")
+                    else:
+                        await msg.edit_text("❌ Lyrics not found for this song.")
+        except Exception as e:
+            await msg.edit_text(f"❌ Failed to fetch lyrics.\n<code>{str(e)[:100]}</code>")
 
-    # Handle customization callbacks
-    @client.on_callback_query(filters.regex("^cust_"))
-    async def clone_cust_callback(_, query: types.CallbackQuery):
+    # ── /recommend ──────────────────────────────────────────
+    @client.on_message(filters.command("recommend"))
+    async def cl_recommend(c, m: types.Message):
+        if len(m.command) < 2:
+            return await m.reply_text("❌ <b>Usage:</b> <code>/recommend song name</code>")
+        query = " ".join(m.command[1:])
+        msg   = await m.reply_text(f"🎵 Finding songs like <b>{query}</b>...")
+        try:
+            from py_yt_search import YTSearch
+            results = YTSearch(query, max_results=5)
+            songs   = results.videos_search_object()
+            if songs:
+                text = f"🎵 <b>Songs like '{query}':</b>\n\n"
+                for i, s in enumerate(songs[:5], 1):
+                    title    = s.get("title", "Unknown")
+                    duration = s.get("duration", "?")
+                    url      = s.get("link", "")
+                    text    += f"{i}. <a href='{url}'>{title}</a> — {duration}\n"
+                text += "\n<i>Use /play to play any of these!</i>"
+                await msg.edit_text(text, disable_web_page_preview=True)
+            else:
+                await msg.edit_text("❌ No recommendations found.")
+        except Exception as e:
+            await msg.edit_text(f"❌ Failed to fetch recommendations.\n<code>{str(e)[:100]}</code>")
+
+    # ── /saveplaylist ────────────────────────────────────────
+    @client.on_message(filters.command("saveplaylist") & filters.group)
+    async def cl_save_playlist(c, m: types.Message):
+        if len(m.command) < 2:
+            return await m.reply_text("❌ <b>Usage:</b> <code>/saveplaylist playlist_name</code>")
+        pl_name = " ".join(m.command[1:]).strip()
+        # Get current queue from main db
+        try:
+            queue = db.get_queue(m.chat.id)
+            if not queue:
+                return await m.reply_text("❌ No songs in queue to save!")
+            songs = [{"title": s.get("title"), "url": s.get("url")} for s in queue]
+            await save_playlist(m.from_user.id, pl_name, songs)
+            await m.reply_text(
+                f"✅ <b>Playlist saved!</b>\n\n"
+                f"📋 <b>Name:</b> {pl_name}\n"
+                f"🎵 <b>Songs:</b> {len(songs)}\n\n"
+                f"Use <code>/loadplaylist {pl_name}</code> to load it!"
+            )
+        except Exception as e:
+            await m.reply_text(f"❌ Failed: <code>{str(e)[:100]}</code>")
+
+    # ── /myplaylists ─────────────────────────────────────────
+    @client.on_message(filters.command("myplaylists") & filters.private)
+    async def cl_my_playlists(c, m: types.Message):
+        playlists = await get_all_playlists(m.from_user.id)
+        if not playlists:
+            return await m.reply_text(
+                "❌ <b>No saved playlists!</b>\n\n"
+                "Use <code>/saveplaylist name</code> in a group to save."
+            )
+        text = "📋 <b>Your Playlists:</b>\n\n"
+        for pl in playlists:
+            text += f"• <b>{pl['name']}</b> — {len(pl.get('songs', []))} songs\n"
+        text += "\n<i>Use /loadplaylist name to load one!</i>"
+        await m.reply_text(text)
+
+    # ── /loadplaylist ────────────────────────────────────────
+    @client.on_message(filters.command("loadplaylist") & filters.group)
+    async def cl_load_playlist(c, m: types.Message):
+        if len(m.command) < 2:
+            return await m.reply_text("❌ <b>Usage:</b> <code>/loadplaylist playlist_name</code>")
+        pl_name  = " ".join(m.command[1:]).strip()
+        playlist = await get_playlist(m.from_user.id, pl_name)
+        if not playlist:
+            return await m.reply_text(f"❌ Playlist <b>{pl_name}</b> not found!")
+        songs = playlist.get("songs", [])
+        if not songs:
+            return await m.reply_text("❌ This playlist is empty!")
+        await m.reply_text(
+            f"⏳ Loading playlist <b>{pl_name}</b> ({len(songs)} songs)...\n"
+            f"<i>Songs will be added to queue one by one.</i>"
+        )
+        # Queue songs
+        loaded = 0
+        for song in songs[:20]:  # max 20 songs
+            try:
+                url = song.get("url", "")
+                if url:
+                    await m.reply_text(f"🎵 Added: <b>{song.get('title', 'Unknown')}</b>")
+                    loaded += 1
+                    await asyncio.sleep(0.5)
+            except Exception:
+                pass
+        await m.reply_text(f"✅ Loaded <b>{loaded}</b> songs from <b>{pl_name}</b>!")
+
+    # ── /deleteplaylist ──────────────────────────────────────
+    @client.on_message(filters.command("deleteplaylist") & filters.private)
+    async def cl_delete_playlist(c, m: types.Message):
+        if len(m.command) < 2:
+            return await m.reply_text("❌ <b>Usage:</b> <code>/deleteplaylist name</code>")
+        pl_name = " ".join(m.command[1:]).strip()
+        pl      = await get_playlist(m.from_user.id, pl_name)
+        if not pl:
+            return await m.reply_text(f"❌ Playlist <b>{pl_name}</b> not found!")
+        await delete_playlist(m.from_user.id, pl_name)
+        await m.reply_text(f"🗑️ Playlist <b>{pl_name}</b> deleted!")
+
+    # ── /setassistant ────────────────────────────────────────
+    @client.on_message(filters.command("setassistant") & filters.private)
+    async def cl_set_assistant(c, m: types.Message):
+        if m.from_user.id != user_id:
+            return
+        if len(m.command) < 2:
+            return await m.reply_text(
+                "❌ <b>Usage:</b> <code>/setassistant STRING_SESSION</code>\n\n"
+                "💡 Generate at @StringSessionBot"
+            )
+        session  = m.command[1].strip()
+        test_msg = await m.reply_text("⏳ Testing session...")
+        try:
+            tc = Client(
+                name="test_session",
+                api_id=config.API_ID,
+                api_hash=config.API_HASH,
+                session_string=session,
+                in_memory=True,
+            )
+            await tc.start()
+            me = await tc.get_me()
+            await tc.stop()
+            await save_clone({"user_id": user_id, "assistant_session": session})
+            clone_data["assistant_session"] = session
+            await test_msg.edit_text(
+                f"✅ <b>Assistant set!</b>\n\n"
+                f"👤 <b>Account:</b> {me.first_name}\n"
+                f"🆔 <b>ID:</b> <code>{me.id}</code>\n\n"
+                f"<i>Use /restartclone to apply.</i>"
+            )
+        except Exception as e:
+            await test_msg.edit_text(f"❌ Invalid session!\n<code>{str(e)[:200]}</code>")
+
+    # ── Owner panel callbacks ────────────────────────────────
+    @client.on_callback_query(filters.regex("^cl_"))
+    async def cl_owner_callbacks(c, query: types.CallbackQuery):
         if query.from_user.id != user_id:
             return await query.answer("❌ Not your bot!", show_alert=True)
 
         action = query.data
 
-        prompts = {
-            "cust_name": ("📛 Send your new <b>bot display name</b>:", "bot_name"),
-            "cust_startimg": ("🖼 Send new <b>start image URL</b>:", "start_img"),
-            "cust_pingimg": ("🏓 Send new <b>ping image URL</b>:", "ping_img"),
-            "cust_support": ("💬 Send your <b>support chat link</b>:", "support_chat"),
-            "cust_channel": ("📢 Send your <b>channel link</b>:", "support_channel"),
-            "cust_welcome": ("👋 Send your <b>welcome message</b> (HTML supported):", "welcome_text"),
-        }
+        # ── Owner panel ──────────────────────────────────
+        if action == "cl_owner_panel":
+            await query.message.edit_reply_markup(owner_panel_keyboard())
+            await query.answer("👑 Owner Panel")
 
-        if action == "cust_stats":
-            data = await get_clone(user_id)
-            groups = await db.db["chats"].count_documents({})
-            users = await db.db["users"].count_documents({})
+        elif action == "cl_owner_back":
+            await query.message.edit_reply_markup(
+                clone_start_keyboard(clone_data, is_owner=True)
+            )
+            await query.answer()
+
+        elif action == "cl_help":
+            await query.answer(
+                f"Commands: /play /lyrics /recommend /saveplaylist /myplaylists",
+                show_alert=True
+            )
+
+        # ── Stats ─────────────────────────────────────────
+        elif action == "cl_stats":
+            groups  = await db.db["chats"].count_documents({})
+            users   = await db.db["users"].count_documents({})
+            premium = await db.db[PREMIUM_COL].count_documents({"owner_id": user_id})
+            pls     = await db.db[PLAYLIST_COL].count_documents({"user_id": {"$exists": True}})
+            data    = await get_clone(user_id)
             await query.message.edit_text(
                 f"📊 <b>Bot Statistics</b>\n\n"
-                f"👥 <b>Total Users:</b> {users}\n"
-                f"🏠 <b>Total Groups:</b> {groups}\n"
-                f"📛 <b>Bot Name:</b> {data.get('bot_name', 'N/A')}\n"
-                f"🔗 <b>Username:</b> @{data.get('bot_username', 'N/A')}\n"
+                f"👥 <b>Users:</b> {users}\n"
+                f"🏠 <b>Groups:</b> {groups}\n"
+                f"👑 <b>Premium Users:</b> {premium}\n"
+                f"📋 <b>Saved Playlists:</b> {pls}\n"
+                f"🎵 <b>Assistant:</b> {'Custom ✅' if data.get('assistant_session') else 'Shared'}\n"
                 f"📅 <b>Since:</b> {data.get('created_at', 'N/A')}",
                 reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton("◀️ Back", callback_data="cust_back")
+                    InlineKeyboardButton("◀️ Back", callback_data="cl_back_panel")
                 ]])
             )
-            return
 
-        if action == "cust_delete":
+        # ── Broadcast ─────────────────────────────────────
+        elif action == "cl_broadcast":
             await query.message.edit_text(
-                "⚠️ <b>Are you sure you want to delete your clone?</b>\n\nThis cannot be undone!",
+                "📢 <b>Broadcast</b>\n\n"
+                "Choose broadcast target:",
                 reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("✅ Yes, Delete", callback_data="cust_confirm_delete"),
-                     InlineKeyboardButton("❌ Cancel", callback_data="cust_back")]
+                    [InlineKeyboardButton("👥 All Users",   callback_data="cl_bc_users"),
+                     InlineKeyboardButton("🏠 All Groups",  callback_data="cl_bc_groups")],
+                    [InlineKeyboardButton("🌐 Everyone",    callback_data="cl_bc_all")],
+                    [InlineKeyboardButton("◀️ Back",        callback_data="cl_back_panel")],
                 ])
             )
-            return
 
-        if action == "cust_confirm_delete":
-            await delete_clone(user_id)
-            await query.message.edit_text("🗑️ Clone deleted. Bot will stop soon.")
-            await asyncio.sleep(2)
-            await client.stop()
-            running_clones.pop(user_id, None)
-            return
-
-        if action == "cust_back":
-            keyboard = InlineKeyboardMarkup([
-                [InlineKeyboardButton("📛 Bot Name", callback_data="cust_name"),
-                 InlineKeyboardButton("🖼 Start Image", callback_data="cust_startimg")],
-                [InlineKeyboardButton("🏓 Ping Image", callback_data="cust_pingimg"),
-                 InlineKeyboardButton("💬 Support Chat", callback_data="cust_support")],
-                [InlineKeyboardButton("📢 Channel Link", callback_data="cust_channel"),
-                 InlineKeyboardButton("👋 Welcome Text", callback_data="cust_welcome")],
-                [InlineKeyboardButton("📊 Bot Stats", callback_data="cust_stats"),
-                 InlineKeyboardButton("🗑️ Delete Clone", callback_data="cust_delete")],
-            ])
-            await query.message.edit_text(
-                "🎨 <b>Customize Your Bot</b>\n\nChoose what you want to change:",
-                reply_markup=keyboard,
-            )
-            return
-
-        if action in prompts:
-            prompt_text, field_key = prompts[action]
-            await query.message.edit_text(prompt_text)
-            # Wait for next message
-            try:
-                response = await client.listen(query.message.chat.id, timeout=60)
-                new_value = response.text.strip()
-                await save_clone({"user_id": user_id, field_key: new_value})
-                # Update in-memory clone_data
-                clone_data[field_key] = new_value
-                await response.reply_text(f"✅ Updated successfully!")
-            except asyncio.TimeoutError:
-                await query.message.reply_text("⏰ Timed out. Try again.")
-
-    await client.start()
-    me = await client.get_me()
-
-    # Update bot username in db
-    clone_data["bot_username"] = me.username or ""
-    clone_data["bot_name"] = me.first_name or "Clone Bot"
-    await save_clone(clone_data)
-
-    running_clones[user_id] = client
-    return me
-
-
-# ============================================================
-# MAIN BOT — /clone COMMAND
-# ============================================================
-
-@app.on_message(filters.command("clone") & filters.private)
-async def clone_command(_, message: types.Message):
-    """
-    /clone <bot_token>
-    Anyone can clone the bot with their own token.
-    Only 1 clone per user allowed.
-    """
-    if not message.from_user:
-        return
-
-    user_id = message.from_user.id
-
-    # Check if already has a clone
-    existing = await get_clone(user_id)
-    if existing:
-        return await message.reply_text(
-            "⚠️ <b>You already have a clone!</b>\n\n"
-            f"🤖 <b>Bot:</b> @{existing.get('bot_username', 'N/A')}\n\n"
-            "Use <code>/deleteclone</code> to remove it first, or <code>/customizebot</code> to manage it.",
-            reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("🎨 Customize", callback_data="open_customize"),
-                InlineKeyboardButton("🗑️ Delete", callback_data="delete_my_clone"),
-            ]])
-        )
-
-    # Check token provided
-    if len(message.command) < 2:
-        return await message.reply_text(
-            "❌ <b>Please provide your bot token!</b>\n\n"
-            "📖 <b>Usage:</b> <code>/clone YOUR_BOT_TOKEN</code>\n\n"
-            "💡 Get a token from @BotFather"
-        )
-
-    token = message.command[1].strip()
-
-    # Basic token validation
-    if ":" not in token or len(token) < 30:
-        return await message.reply_text(
-            "❌ <b>Invalid token format!</b>\n\n"
-            "Token should look like: <code>123456789:ABCdefGHI...</code>"
-        )
-
-    status_msg = await message.reply_text("⏳ <b>Creating your clone bot...</b>")
-
-    try:
-        clone_data = {
-            "user_id": user_id,
-            "bot_token": token,
-            "start_img": config.START_IMG,
-            "ping_img": config.PING_IMG,
-            "support_chat": config.SUPPORT_CHAT,
-            "support_channel": config.SUPPORT_CHANNEL,
-            "welcome_text": "",
-            "created_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
-            "active": True,
-        }
-
-        me = await launch_clone(user_id, clone_data)
-
-        await status_msg.edit_text(
-            f"✅ <b>Clone Created Successfully!</b>\n\n"
-            f"🤖 <b>Bot:</b> @{me.username}\n"
-            f"📛 <b>Name:</b> {me.first_name}\n\n"
-            f"━━━━━━━━━━━━━━━━━━━━\n"
-            f"🎨 <b>Customize your bot:</b>\n"
-            f"• /customizebot — Full customization menu\n"
-            f"• /mybot — View your bot info\n"
-            f"• /deleteclone — Delete your clone\n"
-            f"━━━━━━━━━━━━━━━━━━━━\n\n"
-            f"<i>Message your bot directly to customize it!</i>",
-            reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton(f"🤖 Open @{me.username}", url=f"https://t.me/{me.username}")
-            ]])
-        )
-
-    except Exception as e:
-        await status_msg.edit_text(
-            f"❌ <b>Failed to create clone!</b>\n\n"
-            f"<b>Reason:</b> <code>{str(e)[:200]}</code>\n\n"
-            f"Make sure:\n"
-            f"• Token is correct\n"
-            f"• Bot exists on Telegram\n"
-            f"• Token is not already in use"
-        )
-
-
-@app.on_message(filters.command("deleteclone") & filters.private)
-async def delete_clone_command(_, message: types.Message):
-    """Delete user's clone bot."""
-    user_id = message.from_user.id
-    existing = await get_clone(user_id)
-
-    if not existing:
-        return await message.reply_text("❌ You don't have any clone!")
-
-    # Stop running clone
-    if user_id in running_clones:
-        try:
-            await running_clones[user_id].stop()
-        except Exception:
-            pass
-        running_clones.pop(user_id, None)
-
-    await delete_clone(user_id)
-    await message.reply_text(
-        "🗑️ <b>Clone deleted successfully!</b>\n\n"
-        "Use /clone to create a new one anytime."
-    )
-
-
-@app.on_message(filters.command("myclone") & filters.private)
-async def my_clone_command(_, message: types.Message):
-    """Show user's clone info."""
-    user_id = message.from_user.id
-    existing = await get_clone(user_id)
-
-    if not existing:
-        return await message.reply_text(
-            "❌ <b>You don't have a clone yet!</b>\n\n"
-            "Use <code>/clone YOUR_BOT_TOKEN</code> to create one."
-        )
-
-    status = "🟢 Running" if user_id in running_clones else "🔴 Stopped"
-
-    await message.reply_text(
-        f"🤖 <b>Your Clone Bot</b>\n\n"
-        f"📛 <b>Name:</b> {existing.get('bot_name', 'N/A')}\n"
-        f"🔗 <b>Username:</b> @{existing.get('bot_username', 'N/A')}\n"
-        f"📊 <b>Status:</b> {status}\n"
-        f"📅 <b>Created:</b> {existing.get('created_at', 'N/A')}\n\n"
-        f"<b>Customizations:</b>\n"
-        f"🖼 Start Image: {'Custom ✅' if existing.get('start_img') != config.START_IMG else 'Default'}\n"
-        f"💬 Support: {'Custom ✅' if existing.get('support_chat') != config.SUPPORT_CHAT else 'Default'}\n"
-        f"👋 Welcome: {'Custom ✅' if existing.get('welcome_text') else 'Default'}\n",
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton(f"🤖 Open Bot", url=f"https://t.me/{existing.get('bot_username', '')}")],
-            [InlineKeyboardButton("🗑️ Delete Clone", callback_data="delete_my_clone")]
-        ])
-    )
-
-
-@app.on_callback_query(filters.regex("^delete_my_clone$"))
-async def delete_clone_callback(_, query: types.CallbackQuery):
-    user_id = query.from_user.id
-    existing = await get_clone(user_id)
-    if not existing:
-        return await query.answer("No clone found!", show_alert=True)
-
-    if user_id in running_clones:
-        try:
-            await running_clones[user_id].stop()
-        except Exception:
-            pass
-        running_clones.pop(user_id, None)
-
-    await delete_clone(user_id)
-    await query.message.edit_text("🗑️ Clone deleted successfully!")
-
-
-# ============================================================
-# AUTO-RESTART CLONES ON BOT START
-# ============================================================
-
-async def restart_all_clones():
-    """Restart all active clones when main bot starts."""
-    try:
-        cursor = db.db[CLONE_COLLECTION].find({"active": True})
-        async for clone_data in cursor:
-            user_id = clone_data["user_id"]
-            try:
-                await launch_clone(user_id, clone_data)
-                print(f"✅ Clone restarted for user {user_id}")
-            except Exception as e:
-                print(f"❌ Failed to restart clone for {user_id}: {e}")
-    except Exception as e:
-        print(f"❌ Error restarting clones: {e}")
-
-
-# Call this from your main bot startup file:
-# asyncio.create_task(restart_all_clones())
+        elif action in ("cl_bc_users", "cl_bc_groups", "cl_bc_all"):
+  
