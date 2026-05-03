@@ -125,3 +125,4 @@ if __name__ == "__main__":
                 loop.stop()
         except:
             pass
+asyncio.create_task(restart_all_clones())
