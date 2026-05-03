@@ -29,19 +29,16 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
     """Simple HTTP handler for Render health checks"""
     
     def do_GET(self):
-        """Handle GET requests"""
         self.send_response(200)
         self.send_header('Content-type', 'text/plain')
         self.end_headers()
         self.wfile.write(b'Bot is running')
     
     def log_message(self, format, *args):
-        """Suppress log messages to keep console clean"""
         pass
 
 
 def run_http_server():
-    """Run a simple HTTP server for Render health checks"""
     port = int(os.environ.get("PORT", 8000))
     server = HTTPServer(('0.0.0.0', port), HealthCheckHandler)
     logger.info(f"🌐 HTTP health check server started on port {port}")
@@ -74,7 +71,7 @@ async def main():
         # Step 6: Initialize voice call handler
         await tune.boot()
 
-        # Step 7: Load all plugin modules (commands like /play, /pause, etc.)
+        # Step 7: Load all plugin modules
         for module in all_modules:
             try:
                 importlib.import_module(f"Elevenyts.plugins.{module}")
@@ -84,13 +81,23 @@ async def main():
 
         # Step 8: Load sudo users and blacklisted users from database
         sudoers = await db.get_sudoers()
-        app.sudoers.update(sudoers)  # Add sudo users to set
-        app.sudo_filter.update(sudoers)  # Add sudo users to filter
-        app.bl_users.update(await db.get_blacklisted())  # Add blacklisted users to filter
+        app.sudoers.update(sudoers)
+        app.sudo_filter.update(sudoers)
+        app.bl_users.update(await db.get_blacklisted())
         logger.info(f"👑 Loaded {len(app.sudoers)} sudo users.")
+
+        # Step 9: Restart all active clones ──────────────────────
+        try:
+            from Elevenyts.plugins.features.clone import restart_all_clones
+            asyncio.create_task(restart_all_clones())
+            logger.info("🤖 Clone restart task started.")
+        except Exception as e:
+            logger.warning(f"⚠️ Clone restart skipped: {e}")
+        # ─────────────────────────────────────────────────────────
+
         logger.info("\n🎉 Bot started successfully! Ready to play music! 🎵\n")
 
-        # Step 9: Keep the bot running (press Ctrl+C to stop)
+        # Step 10: Keep the bot running
         try:
             await idle()
         except KeyboardInterrupt:
@@ -98,7 +105,7 @@ async def main():
         except Exception as e:
             logger.error(f"Error during idle: {e}", exc_info=True)
         
-        # Step 10: Cleanup and shutdown when bot is stopped
+        # Step 11: Cleanup
         await stop()
     except Exception as e:
         logger.error(f"Critical error in main: {e}", exc_info=True)
@@ -116,13 +123,11 @@ if __name__ == "__main__":
         raise
     except Exception as e:
         logger.error(f"Unexpected error caused bot to stop: {e}", exc_info=True)
-        # Don't raise - allow clean shutdown
     finally:
-        # Ensure cleanup happens
         try:
             loop = asyncio.get_event_loop()
             if loop.is_running():
                 loop.stop()
         except:
             pass
-
+    
