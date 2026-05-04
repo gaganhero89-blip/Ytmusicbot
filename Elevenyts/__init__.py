@@ -80,23 +80,10 @@ from Elevenyts.core.calls import TgCall
 tune = TgCall()
 
 
-async def on_startup() -> None:
-    """
-    Called after bot starts — launches all active clones.
-    """
-    try:
-        from Elevenyts.plugins.features.clone import restart_all_clones
-        task = asyncio.create_task(restart_all_clones())
-        tasks.append(task)
-        logger.info("🤖 Clone restart task started.")
-    except Exception as e:
-        logger.warning(f"⚠️ Could not start clone restart task: {e}")
-
-
 async def stop() -> None:
     """
     Gracefully shutdown the bot and all its components.
-
+    
     This function:
     - Cancels all running background tasks
     - Closes bot and userbot connections
@@ -104,21 +91,21 @@ async def stop() -> None:
     - Logs shutdown completion
     """
     logger.info("🛑 Stopping bot...")
-
+    
     # Cancel all background tasks
     for task in tasks:
         task.cancel()
         try:
             await task
         except asyncio.CancelledError:
+            # Expected when cancelling tasks - suppress the error
             pass
         except Exception:
             pass
-
+    
     # Close all connections
     await app.exit()
     await userbot.exit()
     await db.close()
-
-    logger.info("✅ Bot stopped successfully.\n")
     
+    logger.info("✅ Bot stopped successfully.\n")
