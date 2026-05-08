@@ -2,23 +2,26 @@
 # /all, .all, @all - Tag all members in group
 # Only admins can use this
 
+import asyncio
 from pyrogram import filters
 from pyrogram.types import Message
 from pyrogram.errors import ChatAdminRequired, FloodWait
 from pyrogram.enums import ChatMemberStatus
 
-import asyncio
 from Elevenyts import app
 
 
 async def _is_admin(client, chat_id: int, user_id: int) -> bool:
+    """Check if user is admin — handles all edge cases"""
     try:
         member = await client.get_chat_member(chat_id, user_id)
         return member.status in (
             ChatMemberStatus.ADMINISTRATOR,
             ChatMemberStatus.OWNER
         )
-    except Exception:
+    except Exception as e:
+        # If error fetching — deny by default
+        print(f"[AdminCheck Error] {e}")
         return False
 
 
@@ -31,27 +34,32 @@ async def _is_admin(client, chat_id: int, user_id: int) -> bool:
 async def tag_all_members(client, message: Message):
     chat_id = message.chat.id
 
-    # Safety check: make sure message is from a real user
+    # ✅ FIX 1: Anonymous admin check (from_user is None)
     if not message.from_user:
-        return
+        # Anonymous admin — allow them
+        user_id = None
+        is_anon_admin = True
+    else:
+        user_id = message.from_user.id
+        is_anon_admin = False
 
-    user_id = message.from_user.id
+    # ✅ FIX 2: Skip admin check for anonymous admins
+    if not is_anon_admin:
+        admin_status = await _is_admin(client, chat_id, user_id)
+        if not admin_status:
+            return await message.reply_text(
+                "❌ Only **Admins** can use this command!"
+            )
 
-    # Admin check
-    if not await _is_admin(client, chat_id, user_id):
-        return await message.reply_text(
-            "❌ Only **Admins** can use this command!"
-        )
-
-    # Extract custom message from /all or @all
+    # Extract custom message
     text = message.text or ""
     custom_msg = ""
 
     if text.lower().startswith("@all"):
         parts = text.split(None, 1)
         custom_msg = parts[1].strip() if len(parts) > 1 else ""
-    elif message.command:
-        custom_msg = message.text.split(None, 1)[1].strip() if len(message.command) > 1 else ""
+    elif message.command and len(message.command) > 1:
+        custom_msg = message.text.split(None, 1)[1].strip()
 
     status = await message.reply_text("⏳ Tagging all members, please wait...")
 
@@ -61,8 +69,6 @@ async def tag_all_members(client, message: Message):
     try:
         async for member in client.get_chat_members(chat_id):
             user = member.user
-
-            # Skip bots and deleted accounts
             if user.is_bot or user.is_deleted:
                 continue
 
@@ -70,7 +76,6 @@ async def tag_all_members(client, message: Message):
             mentions.append(f"[{name}](tg://user?id={user.id})")
             total_tagged += 1
 
-            # Send every 20 members to avoid flood
             if len(mentions) == 20:
                 try:
                     await message.reply_text(
@@ -84,9 +89,9 @@ async def tag_all_members(client, message: Message):
                         disable_web_page_preview=True,
                     )
                 mentions.clear()
-                await asyncio.sleep(0.5)  # Small delay between batches
+                await asyncio.sleep(0.5)
 
-        # Send remaining members
+        # Send remaining
         if mentions:
             try:
                 await message.reply_text(
@@ -100,22 +105,21 @@ async def tag_all_members(client, message: Message):
                     disable_web_page_preview=True,
                 )
 
-        # Send custom message if provided
+        # Custom announcement
         if custom_msg:
             await message.reply_text(f"📢 **Announcement:**\n{custom_msg}")
 
-        # Update status with summary
         await status.edit_text(
             f"✅ Successfully tagged **{total_tagged}** members!"
         )
 
     except ChatAdminRequired:
         await status.edit_text(
-            "❌ Please make the bot an **Admin** in this group to fetch members list!"
+            "❌ Make the bot an **Admin** in this group to fetch members list!"
         )
     except FloodWait as fw:
         await status.edit_text(
-            f"⚠️ Flood wait triggered. Please try again after **{fw.value} seconds**."
+            f"⚠️ Flood wait! Try again after **{fw.value} seconds**."
         )
     except Exception as e:
-        await status.edit_text(f"❌ Error occurred: `{e}`")
+        await status.edit_text(f"❌ Error: `{e}`")
